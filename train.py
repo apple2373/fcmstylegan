@@ -172,19 +172,20 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         requires_grad(generator, False)
         requires_grad(discriminator, True)
 
-        noise = mixing_noise(args.batch, args.latent, args.mixing, device)
-        fake_img, _ = generator(noise)
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
+            noise = mixing_noise(args.batch, args.latent, args.mixing, device)
+            fake_img, _ = generator(noise)
 
-        if args.augment:
-            real_img_aug, _ = augment(real_img, ada_aug_p)
-            fake_img, _ = augment(fake_img, ada_aug_p)
+            if args.augment:
+                real_img_aug, _ = augment(real_img, ada_aug_p)
+                fake_img, _ = augment(fake_img, ada_aug_p)
 
-        else:
-            real_img_aug = real_img
+            else:
+                real_img_aug = real_img
 
-        fake_pred = discriminator(fake_img)
-        real_pred = discriminator(real_img_aug)
-        d_loss = d_logistic_loss(real_pred, fake_pred)
+            fake_pred = discriminator(fake_img)
+            real_pred = discriminator(real_img_aug)
+            d_loss = d_logistic_loss(real_pred, fake_pred)
 
         loss_dict["d"] = d_loss
         loss_dict["real_score"] = real_pred.mean()
@@ -209,8 +210,9 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
             else:
                 real_img_aug = real_img
 
-            real_pred = discriminator(real_img_aug)
-            r1_loss = d_r1_loss(real_pred, real_img)
+            with torch.amp.autocast("cuda", enabled=False):
+                real_pred = discriminator(real_img_aug)
+                r1_loss = d_r1_loss(real_pred, real_img)
 
             discriminator.zero_grad()
             (args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0]).backward()
@@ -222,14 +224,15 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         requires_grad(generator, True)
         requires_grad(discriminator, False)
 
-        noise = mixing_noise(args.batch, args.latent, args.mixing, device)
-        fake_img, _ = generator(noise)
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
+            noise = mixing_noise(args.batch, args.latent, args.mixing, device)
+            fake_img, _ = generator(noise)
 
-        if args.augment:
-            fake_img, _ = augment(fake_img, ada_aug_p)
+            if args.augment:
+                fake_img, _ = augment(fake_img, ada_aug_p)
 
-        fake_pred = discriminator(fake_img)
-        g_loss = g_nonsaturating_loss(fake_pred)
+            fake_pred = discriminator(fake_img)
+            g_loss = g_nonsaturating_loss(fake_pred)
 
         loss_dict["g"] = g_loss
 
@@ -242,11 +245,12 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         if g_regularize:
             path_batch_size = max(1, args.batch // args.path_batch_shrink)
             noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
-            fake_img, latents = generator(noise, return_latents=True)
+            with torch.amp.autocast("cuda", enabled=False):
+                fake_img, latents = generator(noise, return_latents=True)
 
-            path_loss, mean_path_length, path_lengths = g_path_regularize(
-                fake_img, latents, mean_path_length
-            )
+                path_loss, mean_path_length, path_lengths = g_path_regularize(
+                    fake_img, latents, mean_path_length
+                )
 
             generator.zero_grad()
             weighted_path_loss = args.path_regularize * args.g_reg_every * path_loss
@@ -304,8 +308,9 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
 
             if i % 100 == 0:
                 with torch.no_grad():
-                    g_ema.eval()
-                    sample, _ = g_ema([sample_z])
+                    with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
+                        g_ema.eval()
+                        sample, _ = g_ema([sample_z])
                     utils.save_image(
                         sample,
                         f"sample/{str(i).zfill(6)}.png",
@@ -426,6 +431,11 @@ if __name__ == "__main__":
         type=int,
         default=256,
         help="probability update interval of the adaptive augmentation",
+    )
+    parser.add_argument(
+        "--bf16",
+        action="store_true",
+        help="train with bfloat16 autocast",
     )
 
     args = parser.parse_args()
