@@ -6,7 +6,7 @@ cd data
 wget https://huggingface.co/datasets/apple2373/wbcattplus/resolve/main/pbcseg_final_v1.tar?download=true
 mv pbcseg_final_v1.tar\?download\=true pbcseg_final_v1.tar
 tar xf pbcseg_final_v1.tar
-cd pbcseg_final_v
+cd pbcseg_final_v1
 rm -rf *.png
 cd ../../
 ```
@@ -41,24 +41,18 @@ pip install uv
 uv pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu130
 #  uv pip install tqdm pillow lmdb click ninja binarized-atomic-gemm
 uv pip install tqdm pillow lmdb click ninja
-
+conda install -c nvidia cuda-toolkit 
 ``` 
 
 ```
-
 python train.py --size 128 --batch 16 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb 
-```
 
-```
-# bfloat16 + compile
-patch train.py train.patch
-patch -R -i train.patch train.py # put back
-
-python train.py --size 128 --batch 16 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb --compile 
-```
-
-```
-without bfloat16: 18056MiB or 17770MiB (naitive op)
+python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb --bf16 --d_reg_every 64 --g_reg_every 32
 
 ```
 
+
+ToDO
+- remove original op completely so that nvcc compile will not even run later 
+- remove unnecessary augs?
+- make compile workable
