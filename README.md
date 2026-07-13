@@ -66,3 +66,4 @@ ToDO
 - make the training completely resumable
 - remove unnecessary augs?
 - checkFID periodically? 
+- replace dataset class free of lmdb
