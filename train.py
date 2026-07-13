@@ -123,7 +123,7 @@ def set_grad_none(model, targets):
             p.grad = None
 
 
-def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device):
+def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device, sample_dir, checkpoint_dir, writer):
     loader = sample_data(loader)
 
     pbar = range(args.iter)
@@ -289,6 +289,18 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                     f"augment: {ada_aug_p:.4f}"
                 )
             )
+            
+            # Log metrics to TensorBoard with custom structured names
+            writer.add_scalar("Loss/Generator", g_loss_val, i)
+            writer.add_scalar("Loss/Discriminator", d_loss_val, i)
+            writer.add_scalar("Stats/Augment", ada_aug_p, i)
+            writer.add_scalar("Stats/Rt", r_t_stat, i)
+            writer.add_scalar("Loss/R1", r1_val, i)
+            writer.add_scalar("Loss/Path Length Regularization", path_loss_val, i)
+            writer.add_scalar("Stats/Mean Path Length", mean_path_length, i)
+            writer.add_scalar("Score/Real Score", real_score_val, i)
+            writer.add_scalar("Score/Fake Score", fake_score_val, i)
+            writer.add_scalar("Stats/Path Length", path_length_val, i)
 
             if wandb and args.wandb:
                 wandb.log(
@@ -313,7 +325,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                         sample, _ = g_ema([sample_z])
                     utils.save_image(
                         sample,
-                        f"sample/{str(i).zfill(6)}.png",
+                        os.path.join(sample_dir, f"{str(i).zfill(6)}.jpg"),
                         nrow=int(args.n_sample ** 0.5),
                         normalize=True,
                         value_range=(-1, 1),
@@ -330,7 +342,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                         "args": args,
                         "ada_aug_p": ada_aug_p,
                     },
-                    f"checkpoint/{str(i).zfill(6)}.pt",
+                    os.path.join(checkpoint_dir, f"{str(i).zfill(6)}.pt"),
                 )
 
 
@@ -534,8 +546,57 @@ if __name__ == "__main__":
         sampler=data_sampler(dataset, shuffle=True, distributed=args.distributed),
         drop_last=True,
     )
+    
+    from datetime import datetime
+    import json
+    import subprocess
+    import shutil
+    from torch.utils.tensorboard import SummaryWriter
+
+
+    # 1. Generate timestamp and define directory paths
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = f"experiments/{timestamp}"
+    sample_dir = os.path.join(run_dir, "sample")
+    checkpoint_dir = os.path.join(run_dir, "checkpoint")
+    writer = SummaryWriter(log_dir=run_dir)
+
+    # 2. Execute save operations only on the main process (Rank 0)
+    if get_rank() == 0:
+        # Automatically create directories (including the parent 'experiments' directory if it doesn't exist)
+        os.makedirs(sample_dir, exist_ok=True)
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # (1) Save args as a JSON file
+        with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as f:
+            json.dump(vars(args), f, indent=4, ensure_ascii=False)
+
+        # (2) Copy the currently running train.py file for backup
+        shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
+
+        # (3) Retrieve and save Git information (status, hash, diff)
+        try:
+            # Get git status
+            git_status = subprocess.check_output(["git", "status"], stderr=subprocess.STDOUT).decode("utf-8")
+            with open(os.path.join(run_dir, "git_status.txt"), "w", encoding="utf-8") as f:
+                f.write(git_status)
+
+            # Get git commit hash (latest commit ID)
+            git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.STDOUT).decode("utf-8")
+            with open(os.path.join(run_dir, "git_hash.txt"), "w", encoding="utf-8") as f:
+                f.write(git_hash.strip())
+
+            # Get git diff (changes since the last commit)
+            git_diff = subprocess.check_output(["git", "diff"], stderr=subprocess.STDOUT).decode("utf-8")
+            with open(os.path.join(run_dir, "git_diff.txt"), "w", encoding="utf-8") as f:
+                f.write(git_diff)
+
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Skip if it is not a git repository or git command is not installed
+            with open(os.path.join(run_dir, "git_info_error.txt"), "w") as f:
+                f.write("Git information could not be retrieved. (Not a git repository or git not installed)")
 
     if get_rank() == 0 and wandb is not None and args.wandb:
         wandb.init(project="stylegan 2")
 
-    train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device)
+    train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device, sample_dir, checkpoint_dir, writer)

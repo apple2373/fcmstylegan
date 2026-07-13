@@ -2,6 +2,7 @@
 
 Sanitychek Data: WBCAtt
 ```
+mkdir -p data
 cd data
 wget https://huggingface.co/datasets/apple2373/wbcattplus/resolve/main/pbcseg_final_v1.tar?download=true
 mv pbcseg_final_v1.tar\?download\=true pbcseg_final_v1.tar
@@ -41,7 +42,9 @@ pip install uv
 uv pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu130
 #  uv pip install tqdm pillow lmdb click ninja binarized-atomic-gemm
 uv pip install tqdm pillow lmdb click ninja
-conda install -c nvidia cuda-toolkit 
+# conda install -c nvidia cuda-toolkit -y
+# module load CUDA/13.0.0
+
 ``` 
 
 ```
@@ -56,3 +59,6 @@ ToDO
 - remove original op completely so that nvcc compile will not even run later 
 - remove unnecessary augs?
 - make compile workable
+- make savedir configurable
+- save jpeg instead
+- checkFID periodically? 
