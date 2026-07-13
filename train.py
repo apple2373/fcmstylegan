@@ -13,6 +13,12 @@ import torch.distributed as dist
 from torchvision import transforms, utils
 from tqdm import tqdm
 
+import json
+import subprocess
+import shutil
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
+     
 try:
     import wandb
 
@@ -613,14 +619,9 @@ if __name__ == "__main__":
         persistent_workers=True if args.num_workers > 0 else False
     )
     
-    import json
-    import subprocess
-    import shutil
-    from torch.utils.tensorboard import SummaryWriter
-
-
     # 1. Generate timestamp and define directory paths
     run_dir = make_run_dir(args.exp_dir)
+    print("run_dir:",run_dir)
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
     writer = SummaryWriter(log_dir=run_dir)
@@ -632,6 +633,7 @@ if __name__ == "__main__":
         os.makedirs(checkpoint_dir, exist_ok=True)
 
         # (1) Save args as a JSON file
+        print(args)
         with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as f:
             json.dump(vars(args), f, indent=4, ensure_ascii=False)
 
