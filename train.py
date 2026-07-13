@@ -2,6 +2,7 @@ import argparse
 import math
 import random
 import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import time
 
 import numpy as np
@@ -50,7 +51,6 @@ def maybe_compile(model, compile_mode):
 
 
 def make_run_dir(exp_dir, wait_seconds=5):
-
     while True:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = os.path.join(exp_dir, timestamp)
@@ -58,9 +58,7 @@ def make_run_dir(exp_dir, wait_seconds=5):
         if not os.path.exists(run_dir):
             return run_dir
 
-        if get_rank() == 0:
-            print(f"run dir exists, waiting {wait_seconds}s: {run_dir}")
-
+        print(f"run dir exists, waiting {wait_seconds}s: {run_dir}")
         time.sleep(wait_seconds)
 
 
@@ -471,7 +469,11 @@ if __name__ == "__main__":
         "--wandb", action="store_true", help="use weights and biases logging"
     )
     parser.add_argument(
-        "--local_rank", type=int, default=0, help="local rank for distributed training"
+        "--local_rank",
+        "--local-rank",
+        type=int,
+        default=0,
+        help="local rank for distributed training",
     )
     parser.add_argument(
         "--augment", action="store_true", help="apply non leaking augmentation"
@@ -513,13 +515,16 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
+    args.local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = n_gpu > 1
 
     if args.distributed:
         torch.cuda.set_device(args.local_rank)
-        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+        torch.distributed.init_process_group(
+            backend="nccl", init_method="env://", device_id=torch.device(f"cuda:{args.local_rank}")
+        )
         synchronize()
 
     args.latent = 512
@@ -619,15 +624,24 @@ if __name__ == "__main__":
         persistent_workers=True if args.num_workers > 0 else False
     )
     
-    # 1. Generate timestamp and define directory paths
-    run_dir = make_run_dir(args.exp_dir)
-    print("run_dir:",run_dir)
+    # 1. Generate a single run directory on rank 0 and share it with all ranks.
+    if get_rank() == 0:
+        run_dir = make_run_dir(args.exp_dir)
+    else:
+        run_dir = None
+
+    if args.distributed:
+        run_dir_obj = [run_dir]
+        dist.broadcast_object_list(run_dir_obj, src=0)
+        run_dir = run_dir_obj[0]
+
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
-    writer = SummaryWriter(log_dir=run_dir)
 
-    # 2. Execute save operations only on the main process (Rank 0)
     if get_rank() == 0:
+        print("run_dir:", run_dir)
+        writer = SummaryWriter(log_dir=run_dir)
+
         # Automatically create directories (including the parent 'experiments' directory if it doesn't exist)
         os.makedirs(sample_dir, exist_ok=True)
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -661,6 +675,11 @@ if __name__ == "__main__":
             # Skip if it is not a git repository or git command is not installed
             with open(os.path.join(run_dir, "git_info_error.txt"), "w") as f:
                 f.write("Git information could not be retrieved. (Not a git repository or git not installed)")
+    else:
+        writer = None
+
+    if args.distributed:
+        synchronize()
 
     if get_rank() == 0 and wandb is not None and args.wandb:
         wandb.init(project="stylegan 2")
