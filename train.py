@@ -400,6 +400,12 @@ if __name__ == "__main__":
         default=None,
         help="path to the checkpoints to resume training",
     )
+    parser.add_argument(
+        "--exp_dir",
+        type=str,
+        default="experiments",
+        help="root directory for training runs",
+    )
     parser.add_argument("--lr", type=float, default=0.002, help="learning rate")
     parser.add_argument(
         "--channel_multiplier",
@@ -561,7 +567,7 @@ if __name__ == "__main__":
 
     # 1. Generate timestamp and define directory paths
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = f"experiments/{timestamp}"
+    run_dir = os.path.join(args.exp_dir, timestamp)
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
     writer = SummaryWriter(log_dir=run_dir)
