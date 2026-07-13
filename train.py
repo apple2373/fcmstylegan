@@ -449,7 +449,13 @@ if __name__ == "__main__":
         action="store_true",
         help="train with bfloat16 autocast",
     )
-
+    parser.add_argument(
+            "--num_workers",
+            type=int,
+            default=4,
+            help="number of workers for data loading",
+    )
+    
     args = parser.parse_args()
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
@@ -545,6 +551,9 @@ if __name__ == "__main__":
         batch_size=args.batch,
         sampler=data_sampler(dataset, shuffle=True, distributed=args.distributed),
         drop_last=True,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        persistent_workers=True if args.num_workers > 0 else False
     )
     
     from datetime import datetime

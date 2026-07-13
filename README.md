@@ -41,7 +41,7 @@ conda activate fcmstylegan
 pip install uv
 uv pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.pytorch.org/whl/cu130
 #  uv pip install tqdm pillow lmdb click ninja binarized-atomic-gemm
-uv pip install tqdm pillow lmdb click ninja
+uv pip install tqdm pillow lmdb click ninja tensorboard
 # conda install -c nvidia cuda-toolkit -y
 # module load CUDA/13.0.0
 
@@ -51,6 +51,11 @@ uv pip install tqdm pillow lmdb click ninja
 python train.py --size 128 --batch 16 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb 
 
 python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb --bf16 --d_reg_every 64 --g_reg_every 32
+
+python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 64 --g_reg_every 32 ./data/pbcseg_final_v1.lmdb
+python train.py --size 128 --batch 64 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 32 --g_reg_every 16 --path_batch_shrink 4 ./data/pbcseg_final_v1.lmdb
+python train.py --size 128 --batch 128 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 16 --g_reg_every 8 --path_batch_shrink 8 ./data/pbcseg_final_v1.lmdb
+python train.py --size 128 --batch 256 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 8 --g_reg_every 4 --path_batch_shrink 16 ./data/pbcseg_final_v1.lmdb
 
 ```
 
