@@ -30,6 +30,18 @@ from distributed import (
 from non_leaking import augment, AdaptiveAugment
 
 
+def maybe_compile(model, compile_mode):
+    mode = str(compile_mode).lower()
+
+    if mode in {"none", "off", "false", "0"}:
+        return model
+
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("torch.compile is not available in this PyTorch build")
+
+    return torch.compile(model, mode=mode)
+
+
 def data_sampler(dataset, shuffle, distributed):
     if distributed:
         return data.distributed.DistributedSampler(dataset, shuffle=shuffle)
@@ -119,7 +131,22 @@ def set_grad_none(model, targets):
             p.grad = None
 
 
-def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device, sample_dir, checkpoint_dir, writer):
+def train(
+    args,
+    loader,
+    generator,
+    discriminator,
+    g_optim,
+    d_optim,
+    g_ema,
+    device,
+    sample_dir,
+    checkpoint_dir,
+    writer,
+    generator_base,
+    discriminator_base,
+    g_ema_base,
+):
     loader = sample_data(loader)
 
     pbar = range(args.iter)
@@ -136,14 +163,6 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
     path_lengths = torch.tensor(0.0, device=device)
     mean_path_length_avg = 0
     loss_dict = {}
-
-    if args.distributed:
-        g_module = generator.module
-        d_module = discriminator.module
-
-    else:
-        g_module = generator
-        d_module = discriminator
 
     accum = 0.5 ** (32 / (10 * 1000))
     ada_aug_p = args.augment_p if args.augment_p > 0 else 0.0
@@ -187,7 +206,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         loss_dict["real_score"] = real_pred.mean()
         loss_dict["fake_score"] = fake_pred.mean()
 
-        discriminator.zero_grad()
+        discriminator_base.zero_grad()
         d_loss.backward()
         d_optim.step()
 
@@ -207,10 +226,10 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
                 real_img_aug = real_img
 
             with torch.amp.autocast("cuda", enabled=False):
-                real_pred = discriminator(real_img_aug)
+                real_pred = discriminator_base(real_img_aug)
                 r1_loss = d_r1_loss(real_pred, real_img)
 
-            discriminator.zero_grad()
+            discriminator_base.zero_grad()
             (args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0]).backward()
 
             d_optim.step()
@@ -232,7 +251,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
 
         loss_dict["g"] = g_loss
 
-        generator.zero_grad()
+        generator_base.zero_grad()
         g_loss.backward()
         g_optim.step()
 
@@ -242,13 +261,13 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
             path_batch_size = max(1, args.batch // args.path_batch_shrink)
             noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
             with torch.amp.autocast("cuda", enabled=False):
-                fake_img, latents = generator(noise, return_latents=True)
+                fake_img, latents = generator_base(noise, return_latents=True)
 
                 path_loss, mean_path_length, path_lengths = g_path_regularize(
                     fake_img, latents, mean_path_length
                 )
 
-            generator.zero_grad()
+            generator_base.zero_grad()
             weighted_path_loss = args.path_regularize * args.g_reg_every * path_loss
 
             if args.path_batch_shrink:
@@ -265,7 +284,7 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
         loss_dict["path"] = path_loss
         loss_dict["path_length"] = path_lengths.mean()
 
-        accumulate(g_ema, g_module, accum)
+        accumulate(g_ema_base, generator_base, accum)
 
         loss_reduced = reduce_loss_dict(loss_dict)
 
@@ -330,9 +349,9 @@ def train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, devic
             if i % 10000 == 0:
                 torch.save(
                     {
-                        "g": g_module.state_dict(),
-                        "d": d_module.state_dict(),
-                        "g_ema": g_ema.state_dict(),
+                        "g": generator_base.state_dict(),
+                        "d": discriminator_base.state_dict(),
+                        "g_ema": g_ema_base.state_dict(),
                         "g_optim": g_optim.state_dict(),
                         "d_optim": d_optim.state_dict(),
                         "args": args,
@@ -399,6 +418,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="path to the checkpoints to resume training",
+    )
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="none",
+        help='torch.compile mode: "none" disables compile; otherwise use "default", "reduce-overhead", or "max-autotune"',
     )
     parser.add_argument(
         "--exp_dir",
@@ -479,28 +504,47 @@ if __name__ == "__main__":
     elif args.arch == 'swagan':
         from swagan import Generator, Discriminator
 
-    generator = Generator(
+    generator_base = Generator(
         args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
     ).to(device)
-    discriminator = Discriminator(
+    discriminator_base = Discriminator(
         args.size, channel_multiplier=args.channel_multiplier
     ).to(device)
-    g_ema = Generator(
+    g_ema_base = Generator(
         args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
     ).to(device)
-    g_ema.eval()
-    accumulate(g_ema, generator, 0)
+    g_ema_base.eval()
+    accumulate(g_ema_base, generator_base, 0)
+
+    generator = maybe_compile(generator_base, args.compile_mode)
+    discriminator = maybe_compile(discriminator_base, args.compile_mode)
+    g_ema = maybe_compile(g_ema_base, args.compile_mode)
+
+    if args.distributed:
+        generator = nn.parallel.DistributedDataParallel(
+            generator,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            broadcast_buffers=False,
+        )
+
+        discriminator = nn.parallel.DistributedDataParallel(
+            discriminator,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            broadcast_buffers=False,
+        )
 
     g_reg_ratio = args.g_reg_every / (args.g_reg_every + 1)
     d_reg_ratio = args.d_reg_every / (args.d_reg_every + 1)
 
     g_optim = optim.Adam(
-        generator.parameters(),
+        generator_base.parameters(),
         lr=args.lr * g_reg_ratio,
         betas=(0 ** g_reg_ratio, 0.99 ** g_reg_ratio),
     )
     d_optim = optim.Adam(
-        discriminator.parameters(),
+        discriminator_base.parameters(),
         lr=args.lr * d_reg_ratio,
         betas=(0 ** d_reg_ratio, 0.99 ** d_reg_ratio),
     )
@@ -517,27 +561,12 @@ if __name__ == "__main__":
         except ValueError:
             pass
 
-        generator.load_state_dict(ckpt["g"])
-        discriminator.load_state_dict(ckpt["d"])
-        g_ema.load_state_dict(ckpt["g_ema"])
+        generator_base.load_state_dict(ckpt["g"])
+        discriminator_base.load_state_dict(ckpt["d"])
+        g_ema_base.load_state_dict(ckpt["g_ema"])
 
         g_optim.load_state_dict(ckpt["g_optim"])
         d_optim.load_state_dict(ckpt["d_optim"])
-
-    if args.distributed:
-        generator = nn.parallel.DistributedDataParallel(
-            generator,
-            device_ids=[args.local_rank],
-            output_device=args.local_rank,
-            broadcast_buffers=False,
-        )
-
-        discriminator = nn.parallel.DistributedDataParallel(
-            discriminator,
-            device_ids=[args.local_rank],
-            output_device=args.local_rank,
-            broadcast_buffers=False,
-        )
 
     transform = transforms.Compose(
         [
@@ -610,4 +639,19 @@ if __name__ == "__main__":
     if get_rank() == 0 and wandb is not None and args.wandb:
         wandb.init(project="stylegan 2")
 
-    train(args, loader, generator, discriminator, g_optim, d_optim, g_ema, device, sample_dir, checkpoint_dir, writer)
+    train(
+        args,
+        loader,
+        generator,
+        discriminator,
+        g_optim,
+        d_optim,
+        g_ema,
+        device,
+        sample_dir,
+        checkpoint_dir,
+        writer,
+        generator_base,
+        discriminator_base,
+        g_ema_base,
+    )
