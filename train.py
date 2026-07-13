@@ -2,6 +2,7 @@ import argparse
 import math
 import random
 import os
+import time
 
 import numpy as np
 import torch
@@ -40,6 +41,21 @@ def maybe_compile(model, compile_mode):
         raise RuntimeError("torch.compile is not available in this PyTorch build")
 
     return torch.compile(model, mode=mode)
+
+
+def make_run_dir(exp_dir, wait_seconds=5):
+
+    while True:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = os.path.join(exp_dir, timestamp)
+
+        if not os.path.exists(run_dir):
+            return run_dir
+
+        if get_rank() == 0:
+            print(f"run dir exists, waiting {wait_seconds}s: {run_dir}")
+
+        time.sleep(wait_seconds)
 
 
 def data_sampler(dataset, shuffle, distributed):
@@ -597,7 +613,6 @@ if __name__ == "__main__":
         persistent_workers=True if args.num_workers > 0 else False
     )
     
-    from datetime import datetime
     import json
     import subprocess
     import shutil
@@ -605,8 +620,7 @@ if __name__ == "__main__":
 
 
     # 1. Generate timestamp and define directory paths
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(args.exp_dir, timestamp)
+    run_dir = make_run_dir(args.exp_dir)
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
     writer = SummaryWriter(log_dir=run_dir)
