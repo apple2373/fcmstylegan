@@ -426,6 +426,13 @@ if __name__ == "__main__":
         help='torch.compile mode: "none" disables compile; otherwise use "default", "reduce-overhead", or "max-autotune"',
     )
     parser.add_argument(
+        "--matmul_precision",
+        type=str,
+        default="high",
+        choices=("highest", "high", "medium"),
+        help='float32 matmul precision for CUDA (default: high)',
+    )
+    parser.add_argument(
         "--exp_dir",
         type=str,
         default="experiments",
@@ -497,6 +504,9 @@ if __name__ == "__main__":
     args.n_mlp = 8
 
     args.start_iter = 0
+
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision(args.matmul_precision)
 
     if args.arch == 'stylegan2':
         from model import Generator, Discriminator
