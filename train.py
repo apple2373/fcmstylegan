@@ -27,7 +27,6 @@ from distributed import (
     reduce_sum,
     get_world_size,
 )
-from op import conv2d_gradfix
 from non_leaking import augment, AdaptiveAugment
 
 
@@ -69,10 +68,7 @@ def d_logistic_loss(real_pred, fake_pred):
 
 
 def d_r1_loss(real_pred, real_img):
-    with conv2d_gradfix.no_weight_gradients():
-        grad_real, = autograd.grad(
-            outputs=real_pred.sum(), inputs=real_img, create_graph=True
-        )
+    grad_real, = autograd.grad(outputs=real_pred.sum(), inputs=real_img, create_graph=True)
     grad_penalty = grad_real.pow(2).reshape(grad_real.shape[0], -1).sum(1).mean()
 
     return grad_penalty
