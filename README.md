@@ -56,14 +56,13 @@ python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 --bf1
 python train.py --size 128 --batch 64 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 32 --g_reg_every 16 --path_batch_shrink 4 ./data/pbcseg_final_v1.lmdb
 python train.py --size 128 --batch 128 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 16 --g_reg_every 8 --path_batch_shrink 8 ./data/pbcseg_final_v1.lmdb
 python train.py --size 128 --batch 256 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 8 --g_reg_every 4 --path_batch_shrink 16 ./data/pbcseg_final_v1.lmdb
-
 ```
 
-
 ToDO
-- remove original op completely so that nvcc compile will not even run later 
+- [done] remove original op completely so that nvcc compile will not even run later 
+- [done] make savedir configurable
+- [done] save jpeg instead
+- [done] make compile workable
+- make the training completely resumable
 - remove unnecessary augs?
-- make compile workable
-- make savedir configurable
-- save jpeg instead
 - checkFID periodically? 
