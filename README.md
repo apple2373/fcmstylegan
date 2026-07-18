@@ -56,6 +56,45 @@ python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 --bf1
 python train.py --size 128 --batch 64 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 32 --g_reg_every 16 --path_batch_shrink 4 ./data/pbcseg_final_v1.lmdb
 python train.py --size 128 --batch 128 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 16 --g_reg_every 8 --path_batch_shrink 8 ./data/pbcseg_final_v1.lmdb
 python train.py --size 128 --batch 256 --iter 800000 --channel_multiplier 1 --bf16 --d_reg_every 8 --g_reg_every 4 --path_batch_shrink 16 ./data/pbcseg_final_v1.lmdb
+
+
+OMP_NUM_THREADS=4  CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc_per_node=2 train.py     --size 128     --batch 32     --iter 800000     --channel_multiplier 1     --bf16     --d_reg_every 64     --g_reg_every 32     ./data/pbcseg_final_v1.lmdb     --compile_mode default
+
+
+module load CUDA/13.0.0
+module load Miniconda3
+conda activate fcmstylegan
+cd /home/satoshi.tsutsui/satoshissd2/fcmstylegan
+OMP_NUM_THREADS=8  CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 train.py     --size 128     --batch 32     --iter 800000     --channel_multiplier 1     --bf16     --d_reg_every 64     --g_reg_every 32     ./data/pbcseg_final_v1.lmdb     --compile_mode default
+
+sbatch -J stgn2 --gpus pro6000:4 --time 2-00:00:00  --wrap="module load CUDA/13.0.0; module load Miniconda3; conda activate fcmstylegan; cd /projects/_ssd/satoshissd2/fcmstylegan/; OMP_NUM_THREADS=8  CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 train.py     --size 128     --batch 32     --iter 800000     --channel_multiplier 1     --bf16     --d_reg_every 64     --g_reg_every 32     ./data/pbcseg_final_v1.lmdb     --compile_mode default"
+
+sbatch -J stgn2 --gpus a6000:4 --time 2-00:00:00  --wrap="module load CUDA/13.0.0;  module load Miniconda3; conda activate fcmstylegan; cd /projects/_ssd/satoshissd2/fcmstylegan/; OMP_NUM_THREADS=8  CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 train.py     --size 128     --batch 32     --iter 800000     --channel_multiplier 1     --bf16     --d_reg_every 64     --g_reg_every 32     ./data/pbcseg_final_v1.lmdb     --compile_mode default"
+
+
+sbatch \
+    --job-name=stgn2 \
+    --gpus=pro6000:4 \
+    --time=2-00:00:00 \
+    --wrap='bash -lc "
+        module load CUDA/13.0.0
+        source ~/.bashrc
+        conda activate fcmstylegan
+        cd /projects/_ssd/satoshissd2/fcmstylegan
+        export OMP_NUM_THREADS=8
+        export CUDA_VISIBLE_DEVICES=0,1,2,3
+        torchrun --standalone --nproc_per_node=4 train.py \
+            --size 128 \
+            --batch 32 \
+            --iter 800000 \
+            --channel_multiplier 1 \
+            --bf16 \
+            --d_reg_every 64 \
+            --g_reg_every 32 \
+            ./data/pbcseg_final_v1.lmdb \
+            --compile_mode default
+    "'
+
 ```
 
 ToDO
@@ -67,3 +106,14 @@ ToDO
 - remove unnecessary augs?
 - checkFID periodically? 
 - replace dataset class free of lmdb
+
+  CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc_per_node=2 train.py \
+    --size 128 \
+    --batch 32 \
+    --iter 800000 \
+    --channel_multiplier 1 \
+    --bf16 \
+    --d_reg_every 64 \
+    --g_reg_every 32 \
+    ./data/pbcseg_final_v1.lmdb \
+    --compile_mode default
