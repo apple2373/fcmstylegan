@@ -158,7 +158,7 @@ def set_grad_none(model, targets):
 
 
 @torch.inference_mode()
-def calculate_validation_fid(g_ema, inception, loader, device):
+def calculate_validation_fid(g_ema, inception, loader, device, max_samples=None):
     """Calculate FID between real validation images and conditional samples."""
     real_features = []
     fake_features = []
@@ -166,8 +166,17 @@ def calculate_validation_fid(g_ema, inception, loader, device):
     g_ema.eval()
     inception.eval()
 
+    sample_count = 0
     for batch in tqdm(loader, desc="validation FID", leave=False):
+        if max_samples is not None:
+            remaining = max_samples - sample_count
+            if remaining <= 0:
+                break
+            batch["image"] = batch["image"][:remaining]
+            batch["profile"] = batch["profile"][:remaining]
+
         real_img = batch["image"].to(device, non_blocking=True)
+        sample_count += real_img.shape[0]
         profile = batch["profile"].to(device, non_blocking=True)
         noise = [torch.randn(real_img.shape[0], 512, device=device)]
         fake_img, _ = g_ema(noise, profile=profile)
@@ -425,7 +434,7 @@ def train(
                     inception = load_patched_inception_v3().to(device).eval()
 
                 validation_fid = calculate_validation_fid(
-                    g_ema, inception, val_loader, device
+                    g_ema, inception, val_loader, device, args.fid_samples
                 )
                 writer.add_scalar("Validation/FID", validation_fid, i)
                 with open(fid_log_path, "a", encoding="utf-8") as fid_log:
@@ -436,7 +445,7 @@ def train(
 
                 print(f"validation FID: {validation_fid:.6f}")
 
-            if i % 10000 == 0:
+            if args.checkpoint_every > 0 and i % args.checkpoint_every == 0:
                 torch.save(
                     {
                         "g": generator_base.state_dict(),
@@ -607,6 +616,18 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="batch size used for validation FID (defaults to --batch)",
+    )
+    parser.add_argument(
+        "--fid_samples",
+        type=int,
+        default=None,
+        help="maximum validation samples used for FID; defaults to the full validation split",
+    )
+    parser.add_argument(
+        "--checkpoint_every",
+        type=int,
+        default=10000,
+        help="save a checkpoint every N iterations",
     )
     
     args = parser.parse_args()
