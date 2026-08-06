@@ -125,7 +125,12 @@ ToDO
 python train.py --datasplit ./data/task1_dataset_split.csv \
   --preprocessed_root ./data/Task1FCMPreprocessed/ \
   --id_column cell_id \
-  --size 128 --batch 16 --iter 800000 \
+  --size 128 --batch 32 --iter 800000 \
+  --channel_multiplier 1 \
+  --bf16 \
+  --d_reg_every 64 \
+  --g_reg_every 32 \
+  --compile_mode default \
   --mode pad --orientation horizontal --normalized
 ```
 
