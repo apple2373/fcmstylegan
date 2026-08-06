@@ -359,14 +359,14 @@ class StyledConv(nn.Module):
 
 
 class ToRGB(nn.Module):
-    def __init__(self, in_channel, style_dim, upsample=True, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, in_channel, style_dim, upsample=True, blur_kernel=[1, 3, 3, 1], out_channel=3):
         super().__init__()
 
         if upsample:
             self.upsample = Upsample(blur_kernel)
 
-        self.conv = ModulatedConv2d(in_channel, 3, 1, style_dim, demodulate=False)
-        self.bias = nn.Parameter(torch.zeros(1, 3, 1, 1))
+        self.conv = ModulatedConv2d(in_channel, out_channel, 1, style_dim, demodulate=False)
+        self.bias = nn.Parameter(torch.zeros(1, out_channel, 1, 1))
 
     def forward(self, input, style, skip=None):
         out = self.conv(input, style)
@@ -380,6 +380,31 @@ class ToRGB(nn.Module):
         return out
 
 
+class ProfileEncoder(nn.Module):
+    """Encode the three 128-bin FCM tracks into a conditioning vector."""
+
+    def __init__(self, out_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv1d(3, 64, 5, padding=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(64, 128, 5, stride=2, padding=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(128, 256, 5, stride=2, padding=2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(256, out_dim),
+        )
+
+    def forward(self, profile):
+        if profile.ndim != 3 or tuple(profile.shape[1:]) != (3, 128):
+            raise ValueError(
+                f"profile must have shape (batch, 3, 128), got {tuple(profile.shape)}"
+            )
+        return self.net(profile)
+
+
 class Generator(nn.Module):
     def __init__(
         self,
@@ -389,12 +414,14 @@ class Generator(nn.Module):
         channel_multiplier=2,
         blur_kernel=[1, 3, 3, 1],
         lr_mlp=0.01,
+        out_channels=1,
     ):
         super().__init__()
 
         self.size = size
 
         self.style_dim = style_dim
+        self.profile_encoder = ProfileEncoder(style_dim)
 
         layers = [PixelNorm()]
 
@@ -423,7 +450,7 @@ class Generator(nn.Module):
         self.conv1 = StyledConv(
             self.channels[4], self.channels[4], 3, style_dim, blur_kernel=blur_kernel
         )
-        self.to_rgb1 = ToRGB(self.channels[4], style_dim, upsample=False)
+        self.to_rgb1 = ToRGB(self.channels[4], style_dim, upsample=False, out_channel=out_channels)
 
         self.log_size = int(math.log(size, 2))
         self.num_layers = (self.log_size - 2) * 2 + 1
@@ -460,7 +487,7 @@ class Generator(nn.Module):
                 )
             )
 
-            self.to_rgbs.append(ToRGB(out_channel, style_dim))
+            self.to_rgbs.append(ToRGB(out_channel, style_dim, out_channel=out_channels))
 
             in_channel = out_channel
 
@@ -498,9 +525,13 @@ class Generator(nn.Module):
         input_is_latent=False,
         noise=None,
         randomize_noise=True,
+        profile=None,
     ):
+        if profile is None:
+            raise ValueError("profile is required for conditional generation")
+        condition = self.profile_encoder(profile)
         if not input_is_latent:
-            styles = [self.style(s) for s in styles]
+            styles = [self.style(s + condition) for s in styles]
 
         if noise is None:
             if randomize_noise:
@@ -629,7 +660,7 @@ class ResBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1], in_channels=1):
         super().__init__()
 
         channels = {
@@ -644,7 +675,8 @@ class Discriminator(nn.Module):
             1024: 16 * channel_multiplier,
         }
 
-        convs = [ConvLayer(3, channels[size], 1)]
+        convs = [ConvLayer(in_channels, channels[size], 1)]
+        self.profile_encoder = ProfileEncoder(channels[4])
 
         log_size = int(math.log(size, 2))
 
@@ -668,7 +700,9 @@ class Discriminator(nn.Module):
             EqualLinear(channels[4], 1),
         )
 
-    def forward(self, input):
+    def forward(self, input, profile=None):
+        if profile is None:
+            raise ValueError("profile is required for conditional discrimination")
         out = self.convs(input)
 
         batch, channel, height, width = out.shape
@@ -684,7 +718,10 @@ class Discriminator(nn.Module):
         out = self.final_conv(out)
 
         out = out.view(batch, -1)
-        out = self.final_linear(out)
+        feature = self.final_linear[0](out)
+        out = self.final_linear[1](feature)
+        condition = self.profile_encoder(profile)
+        out = out + (feature * condition).sum(1, keepdim=True)
 
         return out
 

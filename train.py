@@ -27,7 +27,7 @@ except ImportError:
     wandb = None
 
 
-from dataset import MultiResolutionDataset
+from brightfield_dataset import BrightFieldProfileDataset
 from distributed import (
     get_rank,
     synchronize,
@@ -192,6 +192,7 @@ def train(
         ada_augment = AdaptiveAugment(args.ada_target, args.ada_length, 8, device)
 
     sample_z = torch.randn(args.n_sample, args.latent, device=device)
+    sample_profile = None
 
     for idx in pbar:
         i = idx + args.start_iter
@@ -201,15 +202,18 @@ def train(
 
             break
 
-        real_img = next(loader)
-        real_img = real_img.to(device)
+        batch = next(loader)
+        real_img = batch["image"].to(device, non_blocking=True)
+        profile = batch["profile"].to(device, non_blocking=True)
+        if sample_profile is None:
+            sample_profile = profile[: args.n_sample].clone()
 
         requires_grad(generator, False)
         requires_grad(discriminator, True)
 
         with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
             noise = mixing_noise(args.batch, args.latent, args.mixing, device)
-            fake_img, _ = generator(noise)
+            fake_img, _ = generator(noise, profile=profile)
 
             if args.augment:
                 real_img_aug, _ = augment(real_img, ada_aug_p)
@@ -218,8 +222,8 @@ def train(
             else:
                 real_img_aug = real_img
 
-            fake_pred = discriminator(fake_img)
-            real_pred = discriminator(real_img_aug)
+            fake_pred = discriminator(fake_img, profile=profile)
+            real_pred = discriminator(real_img_aug, profile=profile)
             d_loss = d_logistic_loss(real_pred, fake_pred)
 
         loss_dict["d"] = d_loss
@@ -246,7 +250,7 @@ def train(
                 real_img_aug = real_img
 
             with torch.amp.autocast("cuda", enabled=False):
-                real_pred = discriminator_base(real_img_aug)
+                real_pred = discriminator_base(real_img_aug, profile=profile)
                 r1_loss = d_r1_loss(real_pred, real_img)
 
             discriminator_base.zero_grad()
@@ -261,12 +265,12 @@ def train(
 
         with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
             noise = mixing_noise(args.batch, args.latent, args.mixing, device)
-            fake_img, _ = generator(noise)
+            fake_img, _ = generator(noise, profile=profile)
 
             if args.augment:
                 fake_img, _ = augment(fake_img, ada_aug_p)
 
-            fake_pred = discriminator(fake_img)
+            fake_pred = discriminator(fake_img, profile=profile)
             g_loss = g_nonsaturating_loss(fake_pred)
 
         loss_dict["g"] = g_loss
@@ -281,7 +285,8 @@ def train(
             path_batch_size = max(1, args.batch // args.path_batch_shrink)
             noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
             with torch.amp.autocast("cuda", enabled=False):
-                fake_img, latents = generator_base(noise, return_latents=True)
+                path_profile = profile[:path_batch_size]
+                fake_img, latents = generator_base(noise, return_latents=True, profile=path_profile)
 
                 path_loss, mean_path_length, path_lengths = g_path_regularize(
                     fake_img, latents, mean_path_length
@@ -357,7 +362,8 @@ def train(
                 with torch.no_grad():
                     with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
                         g_ema.eval()
-                        sample, _ = g_ema([sample_z])
+                        condition = sample_profile.repeat((args.n_sample + sample_profile.shape[0] - 1) // sample_profile.shape[0], 1, 1)[:args.n_sample]
+                        sample, _ = g_ema([sample_z], profile=condition)
                     utils.save_image(
                         sample,
                         os.path.join(sample_dir, f"{str(i).zfill(6)}.jpg"),
@@ -386,7 +392,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
 
-    parser.add_argument("path", type=str, help="path to the lmdb dataset")
+    parser.add_argument("path", type=str, help="path to task1_dataset_split.csv")
+    parser.add_argument("--preprocessed_root", type=str, required=True, help="directory containing preprocessed brightfield/profile files")
+    parser.add_argument("--id_column", type=str, default="cell_id")
+    parser.add_argument("--mode", choices=("pad", "resize"), default="pad")
+    parser.add_argument("--orientation", choices=("horizontal", "vertical"), default="horizontal")
+    parser.add_argument("--normalized", action="store_true", help="use normalized brightfield PNGs")
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
         "--iter", type=int, default=800000, help="total training iterations"
@@ -535,20 +546,18 @@ if __name__ == "__main__":
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision(args.matmul_precision)
 
-    if args.arch == 'stylegan2':
-        from model import Generator, Discriminator
-
-    elif args.arch == 'swagan':
-        from swagan import Generator, Discriminator
+    if args.arch != 'stylegan2':
+        raise ValueError('conditional profile training currently supports --arch stylegan2 only')
+    from model import Generator, Discriminator
 
     generator_base = Generator(
-        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
+        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1
     ).to(device)
     discriminator_base = Discriminator(
-        args.size, channel_multiplier=args.channel_multiplier
+        args.size, channel_multiplier=args.channel_multiplier, in_channels=1
     ).to(device)
     g_ema_base = Generator(
-        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
+        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1
     ).to(device)
     g_ema_base.eval()
     accumulate(g_ema_base, generator_base, 0)
@@ -605,15 +614,14 @@ if __name__ == "__main__":
         g_optim.load_state_dict(ckpt["g_optim"])
         d_optim.load_state_dict(ckpt["d_optim"])
 
-    transform = transforms.Compose(
-        [
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
-        ]
+    dataset = BrightFieldProfileDataset(
+        args.path,
+        args.preprocessed_root,
+        id_column=args.id_column,
+        mode=args.mode,
+        orientation=args.orientation,
+        normalized=args.normalized,
     )
-
-    dataset = MultiResolutionDataset(args.path, transform, args.size)
     loader = data.DataLoader(
         dataset,
         batch_size=args.batch,

@@ -117,3 +117,25 @@ ToDO
     --g_reg_every 32 \
     ./data/pbcseg_final_v1.lmdb \
     --compile_mode default
+## Conditional brightfield training
+
+`train.py` now trains a grayscale conditional StyleGAN2 using `BrightFieldProfileDataset`. The CSV supplies `cell_id` values, while the preprocessing directory supplies the brightfield PNGs and the `(SSC, CD45, mask)` profile archives:
+
+```bash
+python train.py ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --id_column cell_id \
+  --size 128 --batch 16 --iter 800000 \
+  --mode pad --orientation horizontal --normalized
+```
+
+Generated images can be sampled from profiles in the same dataset with:
+
+```bash
+python generate.py --ckpt experiments/<run>/checkpoint/010000.pt \
+  --csv ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --size 128 --pics 20
+```
+
+The conditional model is grayscale and expects profile tensors with shape `(batch, 3, 128)`. Existing unconditional/RGB checkpoints are not compatible with this model.
