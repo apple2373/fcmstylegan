@@ -144,3 +144,24 @@ python generate.py --ckpt experiments/<run>/checkpoint/010000.pt \
 ```
 
 The conditional model is grayscale and expects profile tensors with shape `(batch, 3, 128)`. Existing unconditional/RGB checkpoints are not compatible with this model.
+
+### for debugging the fid thing quickly (remove compile option for quicker test)
+ CUDA_VISIBLE_DEVICES=0 python train.py \
+    --datasplit ./data/task1_dataset_split.csv \
+    --preprocessed_root ./data/Task1FCMPreprocessed/ \
+    --id_column cell_id \
+    --size 128 \
+    --batch 32 \
+    --iter 800000 \
+    --channel_multiplier 1 \
+    --d_reg_every 64 \
+    --g_reg_every 32 \
+    --mode pad \
+    --orientation horizontal \
+    --normalized \
+    --fid_every 1000 \
+    --fid_batch 32 \
+    --bf16 \
+    --compile_mode default 
+  
+  
