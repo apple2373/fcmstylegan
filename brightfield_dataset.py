@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import torch
@@ -55,6 +56,9 @@ class BrightFieldProfileDataset(Dataset):
         mode: str = "pad",
         orientation: str = "horizontal",
         normalized: bool = False,
+        image_max_value: float | None = None,
+        profile_mean: Sequence[float] | None = None,
+        profile_std: Sequence[float] | None = None,
     ) -> None:
         if mode not in {"pad", "resize"}:
             raise ValueError("mode must be 'pad' or 'resize'")
@@ -65,6 +69,22 @@ class BrightFieldProfileDataset(Dataset):
         self.mode = mode
         self.orientation = orientation
         self.normalized = normalized
+        if image_max_value is not None and image_max_value <= 0:
+            raise ValueError("image_max_value must be positive")
+        self.image_max_value = image_max_value
+
+        if (profile_mean is None) != (profile_std is None):
+            raise ValueError("profile_mean and profile_std must be provided together")
+        if profile_mean is None:
+            self.profile_mean = None
+            self.profile_std = None
+        else:
+            if len(profile_mean) != 3 or len(profile_std) != 3:
+                raise ValueError("profile_mean and profile_std must each contain 3 values")
+            self.profile_mean = torch.as_tensor(profile_mean, dtype=torch.float32)
+            self.profile_std = torch.as_tensor(profile_std, dtype=torch.float32)
+            if torch.any(self.profile_std <= 0):
+                raise ValueError("profile_std values must be positive")
 
         with Path(csv_path).open(newline="") as file:
             reader = csv.DictReader(file)
@@ -87,11 +107,13 @@ class BrightFieldProfileDataset(Dataset):
         cell_id = metadata[self.id_column]
         image_path = self._image_path(cell_id)
         profile_path = self._profile_path(cell_id)
+        metadata['image_path'] = str(image_path)
+        metadata['profile_path'] = str(profile_path)
 
-        # These are already padded/resized/normalized by preprocessing.
-        # Keep the dataset/model contract explicit: grayscale images in [-1, 1].
-        image = np.asarray(Image.open(image_path).convert("L"), dtype=np.float32)
-        image = image / 127.5 - 1.0
+        # Return raw pixels unless an image maximum is supplied.
+        image = np.array(Image.open(image_path), copy=True)
+        if self.image_max_value is not None:
+            image = image.astype(np.float32) / self.image_max_value * 2.0 - 1.0
         profiles = np.load(profile_path, allow_pickle=False)
         profile_keys = [
             f"{self.orientation}_ssc",
@@ -106,9 +128,13 @@ class BrightFieldProfileDataset(Dataset):
             raise KeyError(f"{profile_path} is missing profile key {error.args[0]!r}") from error
         profiles.close()
 
+        profile = torch.from_numpy(np.ascontiguousarray(profile)).float()
+        if self.profile_mean is not None:
+            profile = (profile - self.profile_mean[:, None]) / self.profile_std[:, None]
+
         return {
             "image": torch.from_numpy(np.ascontiguousarray(image[None])).float(),
-            "profile": torch.from_numpy(np.ascontiguousarray(profile)).float(),
+            "profile": profile,
             "metadata": metadata,
         }
 

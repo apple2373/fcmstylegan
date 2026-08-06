@@ -122,7 +122,7 @@ ToDO
 `train.py` now trains a grayscale conditional StyleGAN2 using `BrightFieldProfileDataset`. The CSV supplies `cell_id` values, while the preprocessing directory supplies the brightfield PNGs and the `(SSC, CD45, mask)` profile archives:
 
 ```bash
-python train.py ./data/task1_dataset_split.csv \
+python train.py --datasplit ./data/task1_dataset_split.csv \
   --preprocessed_root ./data/Task1FCMPreprocessed/ \
   --id_column cell_id \
   --size 128 --batch 16 --iter 800000 \

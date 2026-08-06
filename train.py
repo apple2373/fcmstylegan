@@ -38,6 +38,12 @@ from distributed import (
 from non_leaking import augment, AdaptiveAugment
 
 
+# Computed from the training split only. Keep these fixed for validation, test,
+# and future inference so all conditions use the same coordinate system.
+PROFILE_MEAN = (1081.6920753719078, 1757.832309922147, 8.545738531675248)
+PROFILE_STD = (2413.4164963508993, 16670.008378761282, 13.959137158636537)
+
+
 def maybe_compile(model, compile_mode):
     mode = str(compile_mode).lower()
 
@@ -392,12 +398,19 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
 
-    parser.add_argument("path", type=str, help="path to task1_dataset_split.csv")
+    parser.add_argument("--datasplit", type=str, required=True, help="CSV containing the dataset rows and split column")
+    parser.add_argument("--split_column", type=str, default="split", help="CSV column containing train/val/test labels")
     parser.add_argument("--preprocessed_root", type=str, required=True, help="directory containing preprocessed brightfield/profile files")
     parser.add_argument("--id_column", type=str, default="cell_id")
     parser.add_argument("--mode", choices=("pad", "resize"), default="pad")
     parser.add_argument("--orientation", choices=("horizontal", "vertical"), default="horizontal")
     parser.add_argument("--normalized", action="store_true", help="use normalized brightfield PNGs")
+    parser.add_argument(
+        "--image_max_value",
+        type=float,
+        default=65535.0,
+        help="maximum stored image pixel value; use 65535 for uint16 or 255 for uint8",
+    )
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
         "--iter", type=int, default=800000, help="total training iterations"
@@ -615,17 +628,48 @@ if __name__ == "__main__":
         d_optim.load_state_dict(ckpt["d_optim"])
 
     dataset = BrightFieldProfileDataset(
-        args.path,
+        args.datasplit,
         args.preprocessed_root,
         id_column=args.id_column,
         mode=args.mode,
         orientation=args.orientation,
         normalized=args.normalized,
+        image_max_value=args.image_max_value,
+        profile_mean=PROFILE_MEAN,
+        profile_std=PROFILE_STD,
     )
+    if args.split_column not in dataset.rows[0]:
+        raise ValueError(f"CSV has no split column {args.split_column!r}")
+
+    split_indices = {"train": [], "val": [], "test": []}
+    for index, row in enumerate(dataset.rows):
+        split = row[args.split_column].strip().lower()
+        if split not in split_indices:
+            raise ValueError(
+                f"unexpected split {row[args.split_column]!r}; expected train, val, or test"
+            )
+        split_indices[split].append(index)
+
+    train_dataset = data.Subset(dataset, split_indices["train"])
+    val_dataset = data.Subset(dataset, split_indices["val"])
+    test_dataset = data.Subset(dataset, split_indices["test"])
+
+    if not all(len(subset) for subset in (train_dataset, val_dataset, test_dataset)):
+        raise ValueError(
+            "CSV must contain non-empty train, val, and test splits; "
+            f"got train={len(train_dataset)}, val={len(val_dataset)}, test={len(test_dataset)}"
+        )
+
+    if get_rank() == 0:
+        print(
+            f"dataset splits: train={len(train_dataset)}, "
+            f"val={len(val_dataset)}, test={len(test_dataset)}"
+        )
+
     loader = data.DataLoader(
-        dataset,
+        train_dataset,
         batch_size=args.batch,
-        sampler=data_sampler(dataset, shuffle=True, distributed=args.distributed),
+        sampler=data_sampler(train_dataset, shuffle=True, distributed=args.distributed),
         drop_last=True,
         num_workers=args.num_workers,
         pin_memory=True,
