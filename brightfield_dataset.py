@@ -57,8 +57,7 @@ class BrightFieldProfileDataset(Dataset):
         orientation: str = "horizontal",
         normalized: bool = False,
         image_max_value: float | None = None,
-        profile_mean: Sequence[float] | None = None,
-        profile_std: Sequence[float] | None = None,
+        profile_scale: Sequence[float] | None = None,
     ) -> None:
         if mode not in {"pad", "resize"}:
             raise ValueError("mode must be 'pad' or 'resize'")
@@ -73,18 +72,14 @@ class BrightFieldProfileDataset(Dataset):
             raise ValueError("image_max_value must be positive")
         self.image_max_value = image_max_value
 
-        if (profile_mean is None) != (profile_std is None):
-            raise ValueError("profile_mean and profile_std must be provided together")
-        if profile_mean is None:
-            self.profile_mean = None
-            self.profile_std = None
+        if profile_scale is None:
+            self.profile_scale = None
         else:
-            if len(profile_mean) != 3 or len(profile_std) != 3:
-                raise ValueError("profile_mean and profile_std must each contain 3 values")
-            self.profile_mean = torch.as_tensor(profile_mean, dtype=torch.float32)
-            self.profile_std = torch.as_tensor(profile_std, dtype=torch.float32)
-            if torch.any(self.profile_std <= 0):
-                raise ValueError("profile_std values must be positive")
+            if len(profile_scale) != 3:
+                raise ValueError("profile_scale must contain 3 values")
+            self.profile_scale = torch.as_tensor(profile_scale, dtype=torch.float32)
+            if torch.any(self.profile_scale <= 0):
+                raise ValueError("profile_scale values must be positive")
 
         with Path(csv_path).open(newline="") as file:
             reader = csv.DictReader(file)
@@ -129,8 +124,9 @@ class BrightFieldProfileDataset(Dataset):
         profiles.close()
 
         profile = torch.from_numpy(np.ascontiguousarray(profile)).float()
-        if self.profile_mean is not None:
-            profile = (profile - self.profile_mean[:, None]) / self.profile_std[:, None]
+        if self.profile_scale is not None:
+            # Direct channel-wise scaling; zero-valued baseline remains zero.
+            profile = profile / self.profile_scale[:, None]
 
         return {
             "image": torch.from_numpy(np.ascontiguousarray(image[None])).float(),

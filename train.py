@@ -36,13 +36,13 @@ from distributed import (
     get_world_size,
 )
 from non_leaking import augment, AdaptiveAugment
+from fid import calc_fid
+from calc_inception import load_patched_inception_v3
 
 
 # Computed from the training split only. Keep these fixed for validation, test,
 # and future inference so all conditions use the same coordinate system.
-PROFILE_MEAN = (1081.6920753719078, 1757.832309922147, 8.545738531675248)
-PROFILE_STD = (2413.4164963508993, 16670.008378761282, 13.959137158636537)
-
+PROFILE_SCALE =  (13570.0, 132411.0, 46.0)
 
 def maybe_compile(model, compile_mode):
     mode = str(compile_mode).lower()
@@ -157,6 +157,44 @@ def set_grad_none(model, targets):
             p.grad = None
 
 
+@torch.inference_mode()
+def calculate_validation_fid(g_ema, inception, loader, device):
+    """Calculate FID between real validation images and conditional samples."""
+    real_features = []
+    fake_features = []
+
+    g_ema.eval()
+    inception.eval()
+
+    for batch in tqdm(loader, desc="validation FID", leave=False):
+        real_img = batch["image"].to(device, non_blocking=True)
+        profile = batch["profile"].to(device, non_blocking=True)
+        noise = [torch.randn(real_img.shape[0], 512, device=device)]
+        fake_img, _ = g_ema(noise, profile=profile)
+
+        # Inception expects RGB images in [0, 1]; the GAN uses grayscale [-1, 1].
+        real_img = real_img.clamp(-1, 1).add(1).div(2).repeat(1, 3, 1, 1)
+        fake_img = fake_img.clamp(-1, 1).add(1).div(2).repeat(1, 3, 1, 1)
+
+        real_features.append(inception(real_img)[0].flatten(1).cpu())
+        fake_features.append(inception(fake_img)[0].flatten(1).cpu())
+
+    if not real_features:
+        raise RuntimeError("validation FID cannot be computed with an empty validation set")
+
+    real_features = torch.cat(real_features).numpy()
+    fake_features = torch.cat(fake_features).numpy()
+    if real_features.shape[0] < 2:
+        raise RuntimeError("validation FID requires at least two validation samples")
+
+    return calc_fid(
+        np.mean(fake_features, axis=0),
+        np.cov(fake_features, rowvar=False),
+        np.mean(real_features, axis=0),
+        np.cov(real_features, rowvar=False),
+    )
+
+
 def train(
     args,
     loader,
@@ -172,6 +210,8 @@ def train(
     generator_base,
     discriminator_base,
     g_ema_base,
+    val_loader,
+    fid_log_path,
 ):
     loader = sample_data(loader)
 
@@ -189,6 +229,8 @@ def train(
     path_lengths = torch.tensor(0.0, device=device)
     mean_path_length_avg = 0
     loss_dict = {}
+    validation_fid = None
+    inception = None
 
     accum = 0.5 ** (32 / (10 * 1000))
     ada_aug_p = args.augment_p if args.augment_p > 0 else 0.0
@@ -378,6 +420,22 @@ def train(
                         value_range=(-1, 1),
                     )
 
+            if args.fid_every > 0 and i > 0 and i % args.fid_every == 0:
+                if inception is None:
+                    inception = load_patched_inception_v3().to(device).eval()
+
+                validation_fid = calculate_validation_fid(
+                    g_ema, inception, val_loader, device
+                )
+                writer.add_scalar("Validation/FID", validation_fid, i)
+                with open(fid_log_path, "a", encoding="utf-8") as fid_log:
+                    fid_log.write(json.dumps({"iteration": i, "fid": validation_fid}) + "\n")
+
+                if wandb and args.wandb:
+                    wandb.log({"Validation/FID": validation_fid}, step=i)
+
+                print(f"validation FID: {validation_fid:.6f}")
+
             if i % 10000 == 0:
                 torch.save(
                     {
@@ -388,6 +446,7 @@ def train(
                         "d_optim": d_optim.state_dict(),
                         "args": args,
                         "ada_aug_p": ada_aug_p,
+                        "validation_fid": validation_fid,
                     },
                     os.path.join(checkpoint_dir, f"{str(i).zfill(6)}.pt"),
                 )
@@ -537,6 +596,18 @@ if __name__ == "__main__":
             default=4,
             help="number of workers for data loading",
     )
+    parser.add_argument(
+        "--fid_every",
+        type=int,
+        default=10000,
+        help="compute validation FID every N iterations; 0 disables FID",
+    )
+    parser.add_argument(
+        "--fid_batch",
+        type=int,
+        default=None,
+        help="batch size used for validation FID (defaults to --batch)",
+    )
     
     args = parser.parse_args()
     args.local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
@@ -635,8 +706,7 @@ if __name__ == "__main__":
         orientation=args.orientation,
         normalized=args.normalized,
         image_max_value=args.image_max_value,
-        profile_mean=PROFILE_MEAN,
-        profile_std=PROFILE_STD,
+        profile_scale=PROFILE_SCALE,
     )
     if args.split_column not in dataset.rows[0]:
         raise ValueError(f"CSV has no split column {args.split_column!r}")
@@ -675,6 +745,15 @@ if __name__ == "__main__":
         pin_memory=True,
         persistent_workers=True if args.num_workers > 0 else False
     )
+    val_loader = data.DataLoader(
+        val_dataset,
+        batch_size=args.fid_batch or args.batch,
+        sampler=data_sampler(val_dataset, shuffle=False, distributed=False),
+        drop_last=False,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        persistent_workers=True if args.num_workers > 0 else False,
+    )
     
     # 1. Generate a single run directory on rank 0 and share it with all ranks.
     if get_rank() == 0:
@@ -689,6 +768,7 @@ if __name__ == "__main__":
 
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
+    fid_log_path = os.path.join(run_dir, "validation_fid.jsonl")
 
     if get_rank() == 0:
         print("run_dir:", run_dir)
@@ -697,6 +777,8 @@ if __name__ == "__main__":
         # Automatically create directories (including the parent 'experiments' directory if it doesn't exist)
         os.makedirs(sample_dir, exist_ok=True)
         os.makedirs(checkpoint_dir, exist_ok=True)
+        if args.fid_every > 0:
+            open(fid_log_path, "a", encoding="utf-8").close()
 
         # (1) Save args as a JSON file
         print(args)
@@ -751,4 +833,6 @@ if __name__ == "__main__":
         generator_base,
         discriminator_base,
         g_ema_base,
+        val_loader,
+        fid_log_path,
     )
