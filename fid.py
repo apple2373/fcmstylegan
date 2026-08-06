@@ -31,13 +31,24 @@ def extract_feature_from_samples(
     return features
 
 
+def _sqrtm(matrix):
+    """Call SciPy sqrtm across versions with and without the disp argument."""
+    try:
+        result = linalg.sqrtm(matrix, disp=False)
+    except TypeError:
+        result = linalg.sqrtm(matrix)
+
+    # Older SciPy returns (matrix, error_estimate); newer versions return matrix.
+    return result[0] if isinstance(result, tuple) else result
+
+
 def calc_fid(sample_mean, sample_cov, real_mean, real_cov, eps=1e-6):
-    cov_sqrt, _ = linalg.sqrtm(sample_cov @ real_cov, disp=False)
+    cov_sqrt = _sqrtm(sample_cov @ real_cov)
 
     if not np.isfinite(cov_sqrt).all():
         print("product of cov matrices is singular")
         offset = np.eye(sample_cov.shape[0]) * eps
-        cov_sqrt = linalg.sqrtm((sample_cov + offset) @ (real_cov + offset))
+        cov_sqrt = _sqrtm((sample_cov + offset) @ (real_cov + offset))
 
     if np.iscomplexobj(cov_sqrt):
         if not np.allclose(np.diagonal(cov_sqrt).imag, 0, atol=1e-3):
