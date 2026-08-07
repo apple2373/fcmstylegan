@@ -164,4 +164,59 @@ The conditional model is grayscale and expects profile tensors with shape `(batc
     --bf16 \
     --compile_mode default 
   
-  
+  ### history
+  ```
+python train.py \
+    --datasplit ./data/task1_dataset_split.csv \
+    --preprocessed_root ./data/Task1FCMPreprocessed/ \
+    --id_column cell_id \
+    --size 128 \
+    --batch 32 \
+    --iter 800000 \
+    --channel_multiplier 1 \
+    --bf16 \
+    --d_reg_every 64 \
+    --g_reg_every 32 \
+    --compile_mode default \
+    --mode pad \
+    --orientation horizontal \
+    --normalized
+ ```
+-> mode collapse?
+
+Then GPT suggested 
+  ```
+  CUDA_VISIBLE_DEVICES=0 python train.py \
+    --datasplit ./data/task1_dataset_split.csv \
+    --preprocessed_root ./data/Task1FCMPreprocessed/ \
+    --id_column cell_id \
+    --size 128 \
+    --batch 32 \
+    --iter 800000 \
+    --channel_multiplier 1 \
+    --lr 0.001 \
+    --d_reg_every 16 \
+    --g_reg_every 4 \
+    --augment \
+    --bf16 \
+    --compile_mode default \
+    --mode pad \
+    --orientation horizontal \
+    --normalized
+```
+
+Why these changes?
+--lr 0.001 (instead of the default 0.002)
+Scientific imaging datasets are usually much smaller and less diverse than FFHQ, so a lower learning rate is often more stable.
+--d_reg_every 16
+This is the original StyleGAN2 default and gives the discriminator stronger, more frequent R1 regularization.
+--g_reg_every 4
+Also the original StyleGAN2 default. Path length regularization helps keep the generator well-behaved.
+--augment
+Enables Adaptive Discriminator Augmentation (ADA), which is particularly useful when the dataset isn't very large.
+
+
+## If this run still collapses
+Then my next experiment would be:
+--lr 0.0005
+--r1 20
