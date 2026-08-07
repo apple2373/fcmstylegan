@@ -157,6 +157,27 @@ def set_grad_none(model, targets):
             p.grad = None
 
 
+def augment_for_training(img, p):
+    # Images must be shaped (batch, channels, height, width).
+    if img.ndim != 4:
+        raise ValueError(f"Expected image shape (B, C, H, W), got {tuple(img.shape)}")
+    if img.shape[1] not in (1, 3):
+        raise ValueError(f"Expected 1 or 3 image channels, got {img.shape[1]}")
+
+    # The legacy non-leaking augmenter expects RGB. Keep the GAN grayscale,
+    # but use a temporary RGB view and collapse it after augmentation.
+    grayscale = img.shape[1] == 1
+    if grayscale:
+        img = img.repeat(1, 3, 1, 1)
+
+    img, transform = augment(img, p)
+
+    if grayscale:
+        img = img.mean(dim=1, keepdim=True)
+
+    return img, transform
+
+
 @torch.inference_mode()
 def calculate_validation_fid(g_ema, inception, loader, device, max_samples=None):
     """Calculate FID between real validation images and conditional samples."""
@@ -273,8 +294,8 @@ def train(
             fake_img, _ = generator(noise, profile=profile)
 
             if args.augment:
-                real_img_aug, _ = augment(real_img, ada_aug_p)
-                fake_img, _ = augment(fake_img, ada_aug_p)
+                real_img_aug, _ = augment_for_training(real_img, ada_aug_p)
+                fake_img, _ = augment_for_training(fake_img, ada_aug_p)
 
             else:
                 real_img_aug = real_img
@@ -301,7 +322,7 @@ def train(
             real_img.requires_grad = True
 
             if args.augment:
-                real_img_aug, _ = augment(real_img, ada_aug_p)
+                real_img_aug, _ = augment_for_training(real_img, ada_aug_p)
 
             else:
                 real_img_aug = real_img
@@ -325,7 +346,7 @@ def train(
             fake_img, _ = generator(noise, profile=profile)
 
             if args.augment:
-                fake_img, _ = augment(fake_img, ada_aug_p)
+                fake_img, _ = augment_for_training(fake_img, ada_aug_p)
 
             fake_pred = discriminator(fake_img, profile=profile)
             g_loss = g_nonsaturating_loss(fake_pred)
