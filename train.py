@@ -157,6 +157,17 @@ def set_grad_none(model, targets):
             p.grad = None
 
 
+def sample_validation_profiles(dataset, n_sample, device):
+    if len(dataset) < n_sample:
+        raise ValueError(
+            f"Validation set has {len(dataset)} samples, but n_sample={n_sample}"
+        )
+
+    indices = torch.randperm(len(dataset))[:n_sample].tolist()
+    profiles = torch.stack([dataset[index]["profile"] for index in indices])
+    return profiles.to(device, non_blocking=True)
+
+
 def augment_for_training(img, p):
     # Images must be shaped (batch, channels, height, width).
     if img.ndim != 4:
@@ -270,7 +281,11 @@ def train(
         ada_augment = AdaptiveAugment(args.ada_target, args.ada_length, 8, device)
 
     sample_z = torch.randn(args.n_sample, args.latent, device=device)
-    sample_profile = None
+    sample_profile = (
+        sample_validation_profiles(val_loader.dataset, args.n_sample, device)
+        if get_rank() == 0
+        else None
+    )
 
     for idx in pbar:
         i = idx + args.start_iter
@@ -283,9 +298,6 @@ def train(
         batch = next(loader)
         real_img = batch["image"].to(device, non_blocking=True)
         profile = batch["profile"].to(device, non_blocking=True)
-        if sample_profile is None:
-            sample_profile = profile[: args.n_sample].clone()
-
         requires_grad(generator, False)
         requires_grad(discriminator, True)
 
@@ -436,11 +448,11 @@ def train(
                     }
                 )
 
-            if i % 100 == 0:
+            if args.sample_every > 0 and i % args.sample_every == 0:
                 with torch.no_grad():
                     with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=args.bf16):
                         g_ema.eval()
-                        condition = sample_profile.repeat((args.n_sample + sample_profile.shape[0] - 1) // sample_profile.shape[0], 1, 1)[:args.n_sample]
+                        condition = sample_profile
                         sample, _ = g_ema([sample_z], profile=condition)
                     utils.save_image(
                         sample,
@@ -512,6 +524,12 @@ if __name__ == "__main__":
         type=int,
         default=64,
         help="number of the samples generated during training",
+    )
+    parser.add_argument(
+        "--sample_every",
+        type=int,
+        default=100,
+        help="save sample visualization every N iterations; 0 disables it",
     )
     parser.add_argument(
         "--size", type=int, default=256, help="image sizes for the model"
