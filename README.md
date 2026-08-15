@@ -237,3 +237,21 @@ CUDA_VISIBLE_DEVICES=2 python3 train.py \
       --bf16 \
       --compile_mode default
 ```
+
+DCGAN
+```
+CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 128 \
+      --iter 100000 \
+      --lr 0.0002 \
+      --beta1 0.5 \
+      --bf16 
+```
+
+• For StyleGAN at channel_multiplier=1, size=128:
+
+  - Generator: 512 → 512 → 512 → 512 → 256 → 128 → 1
+  - Discriminator: 1 → 128 → 256 → 512 → 512 → 512 → 512

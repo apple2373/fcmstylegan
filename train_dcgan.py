@@ -232,6 +232,7 @@ def main():
     run_dir = os.path.join(args.exp_dir, timestamp)
     os.makedirs(os.path.join(run_dir, "sample"), exist_ok=True)
     os.makedirs(os.path.join(run_dir, "checkpoint"), exist_ok=True)
+    print("run_dir:", run_dir)
     with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as file:
         json.dump(vars(args), file, indent=2)
     shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
