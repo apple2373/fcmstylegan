@@ -24,6 +24,15 @@ IMAGE_SIZE = 128
 PROFILE_DIM = 3 * 128
 
 
+def maybe_compile(model, compile_mode):
+    mode = str(compile_mode).lower()
+    if mode in {"none", "off", "false", "0"}:
+        return model
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("torch.compile is not available in this PyTorch build")
+    return torch.compile(model, mode=mode)
+
+
 class Generator(nn.Module):
     def __init__(self, latent_dim=128, base_channels=512):
         super().__init__()
@@ -175,6 +184,8 @@ def main():
     parser.add_argument("--beta1", type=float, default=0.5)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument("--compile_mode", default="none",
+                        help="torch.compile mode; none disables compilation")
     parser.add_argument("--ckpt", default=None)
     parser.add_argument("--exp_dir", default="experiments_dcgan")
     parser.add_argument("--seed", type=int, default=None)
@@ -202,6 +213,8 @@ def main():
             torch.cuda.manual_seed_all(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high")
     use_bf16 = args.bf16 and device.type == "cuda"
     dataset = SysmexTask1Dataset(args.datasplit, args.preprocessed_root)
     subsets = split_dataset(dataset, args.split_column)
@@ -216,15 +229,17 @@ def main():
         num_workers=args.num_workers, pin_memory=device.type == "cuda",
         persistent_workers=args.num_workers > 0
     )
-    generator = Generator(args.latent, args.base_channels).to(device)
-    discriminator = Discriminator(args.base_channels).to(device)
-    g_optim = optim.Adam(generator.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
-    d_optim = optim.Adam(discriminator.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
+    generator_base = Generator(args.latent, args.base_channels).to(device)
+    discriminator_base = Discriminator(args.base_channels).to(device)
+    generator = maybe_compile(generator_base, args.compile_mode)
+    discriminator = maybe_compile(discriminator_base, args.compile_mode)
+    g_optim = optim.Adam(generator_base.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
+    d_optim = optim.Adam(discriminator_base.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
     start = 0
     if args.ckpt:
         checkpoint = torch.load(args.ckpt, map_location=device)
-        generator.load_state_dict(checkpoint["generator"])
-        discriminator.load_state_dict(checkpoint["discriminator"])
+        generator_base.load_state_dict(checkpoint["generator"])
+        discriminator_base.load_state_dict(checkpoint["discriminator"])
         g_optim.load_state_dict(checkpoint["g_optim"])
         d_optim.load_state_dict(checkpoint["d_optim"])
         start = checkpoint.get("iteration", 0)
@@ -318,8 +333,8 @@ def main():
                              nrow=int(args.n_sample ** 0.5), normalize=True, value_range=(-1, 1))
             generator.train()
         if args.checkpoint_every > 0 and step % args.checkpoint_every == 0:
-            torch.save({"iteration": step, "generator": generator.state_dict(),
-                        "discriminator": discriminator.state_dict(), "g_optim": g_optim.state_dict(),
+            torch.save({"iteration": step, "generator": generator_base.state_dict(),
+                        "discriminator": discriminator_base.state_dict(), "g_optim": g_optim.state_dict(),
                         "d_optim": d_optim.state_dict(), "args": vars(args)},
                        os.path.join(run_dir, "checkpoint", f"{step:06d}.pt"))
 
