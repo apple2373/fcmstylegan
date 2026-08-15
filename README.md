@@ -238,8 +238,87 @@ CUDA_VISIBLE_DEVICES=2 python3 train.py \
       --compile_mode default
 ```
 
+Then mode cllapse. GPT says The main issue is likely the learning rate. For this custom conditional StyleGAN2, --lr 0.001 may be too aggressive and can cause collapse.
+
+  Try:
+
+```
+  CUDA_VISIBLE_DEVICES=0 python3 train.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 32 \
+      --iter 200000 \
+      --channel_multiplier 1 \
+      --lr 0.0002 \
+      --d_reg_every 16 \
+      --g_reg_every 4 \
+      --augment \
+      --bf16 \
+      --compile_mode default \
+      --fid_every 5000
+```
+
+  If collapse continues:
+
+  1. Try --lr 0.0001.
+  2. Temporarily remove --compile_mode default for easier debugging.
+  3. Try --augment_p 0.1 instead of adaptive augmentation.
+  4. Check whether discriminator scores rapidly become extreme while generator loss increases.
+
+  I would first change only 0.001 → 0.0002 and reduce the initial run to 200000 iterations.
+
+
+Well, these seems not work (20260815_081433 in olliemain). i think the background is the issue. so • You’re right—we do not know the generated foreground mask during training, so we cannot safely replace only the generated background.
+
+The safest approach is:
+
+- Train the generator to produce zero background.
+- Add mild instance noise to the entire real and fake images only when passing them to the discriminator.
+- Keep the generator’s actual output clean.
+- Apply the same noise process to real and fake images.
+
+This prevents the discriminator from relying on exact zero-padding without requiring a generated mask.
+
+real_for_d = real_image + Gaussian noise
+fake_for_d = fake_image + Gaussian noise
+
+```
+CUDA_VISIBLE_DEVICES=2 python3 train.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 32 \
+      --iter 200000 \
+      --channel_multiplier 1 \
+      --lr 0.001 \
+      --d_reg_every 16 \
+      --g_reg_every 4 \
+      --augment \
+      --bf16 \
+      --compile_mode default \
+      --instance_noise_sigma 0.03 \
+      --instance_noise_sigma_final 0.0 \
+      --instance_noise_decay cosine \
+      --fid_every 5000
+```
+
 DCGAN
 ```
+
+CUDA_VISIBLE_DEVICES=2 python3 train_dcgan.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 128 \
+      --iter 100000 \
+      --lr 0.0002 \
+      --beta1 0.5 \
+      --bf16 \
+      --compile_mode default \
+      --base_channels 128 \ 
+
+
 CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
       --datasplit ./data/task1_dataset_split.csv \
       --preprocessed_root ./data/task1_processed/ \
@@ -263,6 +342,19 @@ CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
       --bf16 \
       --compile_mode default \
       --base_channels 512 \ 
+
+
+CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 128 \
+      --iter 100000 \
+      --lr 0.0002 \
+      --beta1 0.5 \
+      --bf16 \
+      --compile_mode default \
+      --base_channels 1024 \ 
 ```
 
 • For StyleGAN at channel_multiplier=1, size=128:

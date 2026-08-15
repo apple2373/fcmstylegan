@@ -232,6 +232,31 @@ def calculate_validation_fid(g_ema, inception, loader, device, max_samples=None)
     )
 
 
+def get_instance_noise_sigma(args, iteration):
+    initial = args.instance_noise_sigma
+    final = args.instance_noise_sigma_final
+    if args.instance_noise_decay == "none":
+        return initial
+
+    decay_iters = args.instance_noise_decay_iters or args.iter
+    progress = min(max(iteration / decay_iters, 0.0), 1.0)
+    if args.instance_noise_decay == "linear":
+        factor = progress
+    elif args.instance_noise_decay == "cosine":
+        factor = 0.5 * (1.0 - math.cos(math.pi * progress))
+    else:
+        raise ValueError(
+            f"unknown instance noise decay {args.instance_noise_decay!r}"
+        )
+    return initial + (final - initial) * factor
+
+
+def add_instance_noise(image, sigma):
+    if sigma <= 0:
+        return image
+    return (image + torch.randn_like(image) * sigma).clamp(-1, 1)
+
+
 def train(
     args,
     loader,
@@ -294,6 +319,7 @@ def train(
         batch = next(loader)
         real_img = batch["image"].to(device, non_blocking=True)
         profile = batch["profile"].to(device, non_blocking=True)
+        instance_noise_sigma = get_instance_noise_sigma(args, i)
         requires_grad(generator, False)
         requires_grad(discriminator, True)
 
@@ -308,6 +334,8 @@ def train(
             else:
                 real_img_aug = real_img
 
+            real_img_aug = add_instance_noise(real_img_aug, instance_noise_sigma)
+            fake_img = add_instance_noise(fake_img, instance_noise_sigma)
             fake_pred = discriminator(fake_img, profile=profile)
             real_pred = discriminator(real_img_aug, profile=profile)
             d_loss = d_logistic_loss(real_pred, fake_pred)
@@ -335,6 +363,7 @@ def train(
             else:
                 real_img_aug = real_img
 
+            real_img_aug = add_instance_noise(real_img_aug, instance_noise_sigma)
             with torch.amp.autocast("cuda", enabled=False):
                 real_pred = discriminator_base(real_img_aug, profile=profile)
                 r1_loss = d_r1_loss(real_pred, real_img)
@@ -356,6 +385,7 @@ def train(
             if args.augment:
                 fake_img, _ = augment_for_training(fake_img, ada_aug_p)
 
+            fake_img = add_instance_noise(fake_img, instance_noise_sigma)
             fake_pred = discriminator(fake_img, profile=profile)
             g_loss = g_nonsaturating_loss(fake_pred)
 
@@ -420,6 +450,7 @@ def train(
             writer.add_scalar("Loss/Generator", g_loss_val, i)
             writer.add_scalar("Loss/Discriminator", d_loss_val, i)
             writer.add_scalar("Stats/Augment", ada_aug_p, i)
+            writer.add_scalar("Stats/Instance Noise Sigma", instance_noise_sigma, i)
             writer.add_scalar("Stats/Rt", r_t_stat, i)
             writer.add_scalar("Loss/R1", r1_val, i)
             writer.add_scalar("Loss/Path Length Regularization", path_loss_val, i)
@@ -602,6 +633,30 @@ if __name__ == "__main__":
         help="probability of applying augmentation. 0 = use adaptive augmentation",
     )
     parser.add_argument(
+        "--instance_noise_sigma",
+        type=float,
+        default=0.0,
+        help="initial Gaussian instance-noise standard deviation for discriminator inputs",
+    )
+    parser.add_argument(
+        "--instance_noise_sigma_final",
+        type=float,
+        default=0.0,
+        help="final instance-noise standard deviation after decay",
+    )
+    parser.add_argument(
+        "--instance_noise_decay",
+        choices=("none", "linear", "cosine"),
+        default="cosine",
+        help="schedule used to decay instance noise",
+    )
+    parser.add_argument(
+        "--instance_noise_decay_iters",
+        type=int,
+        default=None,
+        help="iterations over which instance noise decays; defaults to --iter",
+    )
+    parser.add_argument(
         "--ada_target",
         type=float,
         default=0.6,
@@ -656,6 +711,10 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
+    if args.instance_noise_sigma < 0 or args.instance_noise_sigma_final < 0:
+        raise ValueError("instance noise sigma values must be non-negative")
+    if args.instance_noise_decay_iters is not None and args.instance_noise_decay_iters <= 0:
+        raise ValueError("instance_noise_decay_iters must be positive")
     args.local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
