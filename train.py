@@ -27,7 +27,7 @@ except ImportError:
     wandb = None
 
 
-from brightfield_dataset import BrightFieldProfileDataset
+from sysmex_task1_dataset import SysmexTask1Dataset
 from distributed import (
     get_rank,
     synchronize,
@@ -39,10 +39,6 @@ from non_leaking import augment, AdaptiveAugment
 from fid import calc_fid
 from calc_inception import load_patched_inception_v3
 
-
-# Computed from the training split only. Keep these fixed for validation, test,
-# and future inference so all conditions use the same coordinate system.
-PROFILE_SCALE =  (13570.0, 132411.0, 46.0)
 
 def maybe_compile(model, compile_mode):
     mode = str(compile_mode).lower()
@@ -502,16 +498,6 @@ if __name__ == "__main__":
     parser.add_argument("--datasplit", type=str, required=True, help="CSV containing the dataset rows and split column")
     parser.add_argument("--split_column", type=str, default="split", help="CSV column containing train/val/test labels")
     parser.add_argument("--preprocessed_root", type=str, required=True, help="directory containing preprocessed brightfield/profile files")
-    parser.add_argument("--id_column", type=str, default="cell_id")
-    parser.add_argument("--mode", choices=("pad", "resize"), default="pad")
-    parser.add_argument("--orientation", choices=("horizontal", "vertical"), default="horizontal")
-    parser.add_argument("--normalized", action="store_true", help="use normalized brightfield PNGs")
-    parser.add_argument(
-        "--image_max_value",
-        type=float,
-        default=65535.0,
-        help="maximum stored image pixel value; use 65535 for uint16 or 255 for uint8",
-    )
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
         "--iter", type=int, default=800000, help="total training iterations"
@@ -758,15 +744,9 @@ if __name__ == "__main__":
         g_optim.load_state_dict(ckpt["g_optim"])
         d_optim.load_state_dict(ckpt["d_optim"])
 
-    dataset = BrightFieldProfileDataset(
+    dataset = SysmexTask1Dataset(
         args.datasplit,
         args.preprocessed_root,
-        id_column=args.id_column,
-        mode=args.mode,
-        orientation=args.orientation,
-        normalized=args.normalized,
-        image_max_value=args.image_max_value,
-        profile_scale=PROFILE_SCALE,
     )
     if args.split_column not in dataset.rows[0]:
         raise ValueError(f"CSV has no split column {args.split_column!r}")

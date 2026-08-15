@@ -220,3 +220,20 @@ Enables Adaptive Discriminator Augmentation (ADA), which is particularly useful 
 Then my next experiment would be:
 --lr 0.0005
 --r1 20
+
+new script
+```
+CUDA_VISIBLE_DEVICES=2 python3 train.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 32 \
+      --iter 800000 \
+      --channel_multiplier 1 \
+      --lr 0.001 \
+      --d_reg_every 16 \
+      --g_reg_every 4 \
+      --augment \
+      --bf16 \
+      --compile_mode default
+```
