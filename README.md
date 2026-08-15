@@ -283,6 +283,7 @@ This prevents the discriminator from relying on exact zero-padding without requi
 real_for_d = real_image + Gaussian noise
 fake_for_d = fake_image + Gaussian noise
 
+implemented : 
 ```
 CUDA_VISIBLE_DEVICES=2 python3 train.py \
       --datasplit ./data/task1_dataset_split.csv \
@@ -302,6 +303,7 @@ CUDA_VISIBLE_DEVICES=2 python3 train.py \
       --instance_noise_decay cosine \
       --fid_every 5000
 ```
+BTW  --iter 200000 looks enough 
 
 DCGAN
 ```
@@ -361,3 +363,29 @@ CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
 
   - Generator: 512 → 512 → 512 → 512 → 256 → 128 → 1
   - Discriminator: 1 → 128 → 256 → 512 → 512 → 512 → 512
+
+- after checking ['20260815_093638',
+ '20260815_094038',
+ '20260815_094723',
+ '20260815_104948',
+ '20260815_110256'], 
+- 128 seems too little. 
+- over 256 seems okay. maybe just 512 for now, because later we will move to color images. 
+
+
+### next is instance noise
+CUDA_VISIBLE_DEVICES=2 python3 train_dcgan.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 128 \
+      --iter 100000 \
+      --lr 0.0002 \
+      --beta1 0.5 \
+      --bf16 \
+      --compile_mode default \
+      --base_channels 512 \
+      --instance_noise_sigma 0.03 \
+      --instance_noise_sigma_final 0.0 \
+      --instance_noise_decay cosine
+-> not so effective, decided not to do. 
