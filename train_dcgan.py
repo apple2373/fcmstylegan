@@ -163,6 +163,11 @@ def main():
     parser = argparse.ArgumentParser(description="Conditional Sysmex Task 1 DCGAN trainer")
     parser.add_argument("--datasplit", required=True)
     parser.add_argument("--preprocessed_root", required=True)
+    parser.add_argument(
+        "--brightfield_postfix",
+        default="_brightfield_crop_masked_normalized_randbg_pad128.png",
+        help="suffix of the preprocessed brightfield image files",
+    )
     parser.add_argument("--split_column", default="split")
     parser.add_argument("--latent", type=int, default=128)
     parser.add_argument("--base_channels", type=int, default=256,
@@ -216,7 +221,11 @@ def main():
     if hasattr(torch, "set_float32_matmul_precision"):
         torch.set_float32_matmul_precision("high")
     use_bf16 = args.bf16 and device.type == "cuda"
-    dataset = SysmexTask1Dataset(args.datasplit, args.preprocessed_root)
+    dataset = SysmexTask1Dataset(
+        args.datasplit,
+        args.preprocessed_root,
+        brightfield_postfix=args.brightfield_postfix,
+    )
     subsets = split_dataset(dataset, args.split_column)
     train_set, val_set = subsets["train"], subsets["val"]
     loader = data.DataLoader(

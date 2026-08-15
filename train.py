@@ -498,6 +498,12 @@ if __name__ == "__main__":
     parser.add_argument("--datasplit", type=str, required=True, help="CSV containing the dataset rows and split column")
     parser.add_argument("--split_column", type=str, default="split", help="CSV column containing train/val/test labels")
     parser.add_argument("--preprocessed_root", type=str, required=True, help="directory containing preprocessed brightfield/profile files")
+    parser.add_argument(
+        "--brightfield_postfix",
+        type=str,
+        default="_brightfield_crop_masked_normalized_randbg_pad128.png",
+        help="suffix of the preprocessed brightfield image files",
+    )
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
         "--iter", type=int, default=800000, help="total training iterations"
@@ -747,6 +753,7 @@ if __name__ == "__main__":
     dataset = SysmexTask1Dataset(
         args.datasplit,
         args.preprocessed_root,
+        brightfield_postfix=args.brightfield_postfix,
     )
     if args.split_column not in dataset.rows[0]:
         raise ValueError(f"CSV has no split column {args.split_column!r}")
