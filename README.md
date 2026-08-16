@@ -102,10 +102,10 @@ ToDO
 - [done] make savedir configurable
 - [done] save jpeg instead
 - [done] make compile workable
-- make the training completely resumable
-- remove unnecessary augs?
-- checkFID periodically? 
-- replace dataset class free of lmdb
+- [probbaly not] make the training completely resumable
+- [done] remove unnecessary augs?
+- [done] checkFID periodically? 
+- [done] replace dataset class free of lmdb
 
   CUDA_VISIBLE_DEVICES=2,3 torchrun --standalone --nproc_per_node=2 train.py \
     --size 128 \
@@ -117,6 +117,7 @@ ToDO
     --g_reg_every 32 \
     ./data/pbcseg_final_v1.lmdb \
     --compile_mode default
+
 ## DiffAugment for DCGAN training
 
 `train_dcgan.py` supports the differentiable augmentation method from the [MIT HAN Lab Data-Efficient GANs repository](https://github.com/mit-han-lab/data-efficient-gans) and the [DiffAugment paper](https://arxiv.org/abs/2006.10738). DiffAugment applies randomly sampled, differentiable image transformations to the inputs of the discriminator. This makes it harder for the discriminator to memorize a small training set and can improve GAN training when data is limited.
@@ -139,6 +140,14 @@ python train_dcgan.py \
 ```
 
 `--diff_aug` is an alias for `--diff_aug_policy`. Start with `color,translation,cutout` for very small datasets, or use a subset such as `color,translation` for larger datasets. The selected policy is saved in each run's `args.json`.
+
+## Optional EMA generator
+
+Use `--ema` to maintain an exponential moving average of the generator. When enabled, EMA weights are used for validation FID and saved samples, and are stored in checkpoints as `generator_ema`. EMA is disabled by default. The decay can be configured with `--ema_decay` (default `0.999`):
+
+```bash
+python train_dcgan.py ... --ema --ema_decay 0.999
+```
 
 ## Conditional brightfield training
 
@@ -168,7 +177,7 @@ python generate.py --ckpt experiments/<run>/checkpoint/010000.pt \
 
 The conditional model is grayscale and expects profile tensors with shape `(batch, 3, 128)`. Existing unconditional/RGB checkpoints are not compatible with this model.
 
-### for debugging the fid thing quickly (remove compile option for quicker test)
+## for debugging the fid thing quickly (remove compile option for quicker test)
  CUDA_VISIBLE_DEVICES=0 python train.py \
     --datasplit ./data/task1_dataset_split.csv \
     --preprocessed_root ./data/Task1FCMPreprocessed/ \
@@ -187,7 +196,7 @@ The conditional model is grayscale and expects profile tensors with shape `(batc
     --bf16 \
     --compile_mode default 
   
-  ### history
+## history
   ```
 python train.py \
     --datasplit ./data/task1_dataset_split.csv \
@@ -239,7 +248,7 @@ Also the original StyleGAN2 default. Path length regularization helps keep the g
 Enables Adaptive Discriminator Augmentation (ADA), which is particularly useful when the dataset isn't very large.
 
 
-## If this run still collapses
+### If this run still collapses
 Then my next experiment would be:
 --lr 0.0005
 --r1 20

@@ -34,6 +34,20 @@ def maybe_compile(model, compile_mode):
     return torch.compile(model, mode=mode)
 
 
+@torch.no_grad()
+def update_ema(ema_model, model, decay):
+    """Update EMA parameters and copy BatchNorm buffers from the live model."""
+    ema_parameters = dict(ema_model.named_parameters())
+    model_parameters = dict(model.named_parameters())
+    for name, ema_parameter in ema_parameters.items():
+        ema_parameter.mul_(decay).add_(model_parameters[name], alpha=1.0 - decay)
+
+    ema_buffers = dict(ema_model.named_buffers())
+    model_buffers = dict(model.named_buffers())
+    for name, ema_buffer in ema_buffers.items():
+        ema_buffer.copy_(model_buffers[name])
+
+
 class Generator(nn.Module):
     def __init__(self, latent_dim=128, base_channels=512):
         super().__init__()
@@ -190,7 +204,7 @@ def main():
     parser.add_argument("--iter", type=int, default=100000)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--n_sample", type=int, default=64)
-    parser.add_argument("--sample_every", type=int, default=100)
+    parser.add_argument("--sample_every", type=int, default=1000)
     parser.add_argument("--checkpoint_every", type=int, default=10000)
     parser.add_argument("--fid_every", type=int, default=5000,
                         help="compute validation FID every N iterations; 0 disables FID")
@@ -203,6 +217,10 @@ def main():
         metavar="POLICY",
         help="comma-separated DiffAugment policy (color, translation, cutout); empty disables it",
     )
+    parser.add_argument("--ema", action="store_true",
+                        help="use an exponential moving average generator for evaluation and samples")
+    parser.add_argument("--ema_decay", type=float, default=0.999,
+                        help="EMA decay; only used with --ema (default: 0.999)")
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--beta1", type=float, default=0.5)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -218,6 +236,8 @@ def main():
     if args.base_channels < 16 or args.base_channels % 16:
         raise ValueError("base_channels must be a multiple of 16 and at least 16")
     args.diff_aug_policy = validate_diff_aug_policy(args.diff_aug_policy)
+    if not 0.0 <= args.ema_decay < 1.0:
+        raise ValueError("ema_decay must be in [0, 1)")
 
     channel_widths = [
         args.base_channels,
@@ -259,6 +279,13 @@ def main():
     )
     generator_base = Generator(args.latent, args.base_channels).to(device)
     discriminator_base = Discriminator(args.base_channels).to(device)
+    generator_ema = None
+    if args.ema:
+        generator_ema = Generator(args.latent, args.base_channels).to(device)
+        generator_ema.load_state_dict(generator_base.state_dict())
+        generator_ema.eval()
+        for parameter in generator_ema.parameters():
+            parameter.requires_grad_(False)
     generator = maybe_compile(generator_base, args.compile_mode)
     discriminator = maybe_compile(discriminator_base, args.compile_mode)
     g_optim = optim.Adam(generator_base.parameters(), lr=args.lr, betas=(args.beta1, 0.999))
@@ -270,6 +297,11 @@ def main():
         discriminator_base.load_state_dict(checkpoint["discriminator"])
         g_optim.load_state_dict(checkpoint["g_optim"])
         d_optim.load_state_dict(checkpoint["d_optim"])
+        if generator_ema is not None:
+            if checkpoint.get("generator_ema") is not None:
+                generator_ema.load_state_dict(checkpoint["generator_ema"])
+            else:
+                generator_ema.load_state_dict(generator_base.state_dict())
         start = checkpoint.get("iteration", 0)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -344,6 +376,8 @@ def main():
             )
         g_loss.backward()
         g_optim.step()
+        if generator_ema is not None:
+            update_ema(generator_ema, generator_base, args.ema_decay)
         progress.set_description(f"d: {d_loss.item():.4f}; g: {g_loss.item():.4f}")
         step = iteration + 1
         writer.add_scalar("Loss/Discriminator", d_loss.item(), step)
@@ -355,7 +389,8 @@ def main():
             if inception is None:
                 inception = load_patched_inception_v3().to(device).eval()
             validation_fid = calculate_validation_fid(
-                generator, inception, val_loader, device, args.latent, args.fid_samples
+                generator_ema if generator_ema is not None else generator,
+                inception, val_loader, device, args.latent, args.fid_samples
             )
             writer.add_scalar("Validation/FID", validation_fid, step)
             with open(fid_log_path, "a", encoding="utf-8") as fid_log:
@@ -365,17 +400,28 @@ def main():
 
 
         if args.sample_every > 0 and step % args.sample_every == 0:
-            generator.eval()
+            sample_generator = generator_ema if generator_ema is not None else generator
+            sample_generator.eval()
             with torch.no_grad():
-                samples = generator(fixed_noise, fixed_profile)
+                samples = sample_generator(fixed_noise, fixed_profile)
             utils.save_image(samples, os.path.join(run_dir, "sample", f"{step:06d}.png"),
                              nrow=int(args.n_sample ** 0.5), normalize=True, value_range=(-1, 1))
             generator.train()
         if args.checkpoint_every > 0 and step % args.checkpoint_every == 0:
-            torch.save({"iteration": step, "generator": generator_base.state_dict(),
-                        "discriminator": discriminator_base.state_dict(), "g_optim": g_optim.state_dict(),
-                        "d_optim": d_optim.state_dict(), "args": vars(args)},
-                       os.path.join(run_dir, "checkpoint", f"{step:06d}.pt"))
+            checkpoint_state = {
+                "iteration": step,
+                "generator": generator_base.state_dict(),
+                "discriminator": discriminator_base.state_dict(),
+                "g_optim": g_optim.state_dict(),
+                "d_optim": d_optim.state_dict(),
+                "args": vars(args),
+            }
+            if generator_ema is not None:
+                checkpoint_state["generator_ema"] = generator_ema.state_dict()
+            torch.save(
+                checkpoint_state,
+                os.path.join(run_dir, "checkpoint", f"{step:06d}.pt"),
+            )
 
     writer.close()
 
