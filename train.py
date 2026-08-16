@@ -501,7 +501,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--brightfield_postfix",
         type=str,
-        default="_brightfield_crop_masked_normalized_randbg_pad128.png",
+        default="_brightfield_crop_masked_normalized_avebg_pad128.png",
         help="suffix of the preprocessed brightfield image files",
     )
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')

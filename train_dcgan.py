@@ -165,7 +165,7 @@ def main():
     parser.add_argument("--preprocessed_root", required=True)
     parser.add_argument(
         "--brightfield_postfix",
-        default="_brightfield_crop_masked_normalized_randbg_pad128.png",
+        default="_brightfield_crop_masked_normalized_avebg_pad128.png",
         help="suffix of the preprocessed brightfield image files",
     )
     parser.add_argument("--split_column", default="split")

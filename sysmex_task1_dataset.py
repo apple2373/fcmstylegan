@@ -126,7 +126,7 @@ class SysmexTask1Dataset(Dataset):
         id_column: str = "cell_id",
         profile_prefix: str = "vertical",
         brightfield_postfix: str = (
-            "_brightfield_crop_masked_normalized_randbg_pad128.png"
+            "_brightfield_crop_masked_normalized_avebg_pad128.png"
         ),
         profile_postfix: str = "_profiles_pad128.npz",
         mask_postfix: str = "_mask_crop_pad128.png",
