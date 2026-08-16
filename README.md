@@ -343,7 +343,7 @@ CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
       --beta1 0.5 \
       --bf16 \
       --compile_mode default \
-      --base_channels 512 \ 
+      --base_channels 512 \
 
 
 CUDA_VISIBLE_DEVICES=0 python3 train_dcgan.py \
@@ -389,3 +389,22 @@ CUDA_VISIBLE_DEVICES=2 python3 train_dcgan.py \
       --instance_noise_sigma_final 0.0 \
       --instance_noise_decay cosine
 -> not so effective, decided not to do. 
+
+
+### try again
+
+CUDA_VISIBLE_DEVICES=0 python3 train.py \
+      --datasplit ./data/task1_dataset_split.csv \
+      --preprocessed_root ./data/task1_processed/ \
+      --size 128 \
+      --batch 32 \
+      --iter 800000 \
+      --channel_multiplier 1 \
+      --lr 0.001 \
+      --d_reg_every 16 \
+      --g_reg_every 4 \
+      --augment \
+      --bf16 \
+      --compile_mode default \
+      --fid_every 5000 \
+      --brightfield_postfix _brightfield_crop_masked_normalized_randbg_pad128.png

@@ -257,7 +257,10 @@ def main():
     run_dir = os.path.join(args.exp_dir, timestamp)
     os.makedirs(os.path.join(run_dir, "sample"), exist_ok=True)
     os.makedirs(os.path.join(run_dir, "checkpoint"), exist_ok=True)
+    fid_log_path = os.path.join(run_dir, "validation_fid.jsonl")
     print("run_dir:", run_dir)
+    if args.fid_every > 0:
+        open(fid_log_path, "a", encoding="utf-8").close()
     with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as file:
         json.dump(vars(args), file, indent=2)
     shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
@@ -330,6 +333,8 @@ def main():
                 generator, inception, val_loader, device, args.latent, args.fid_samples
             )
             writer.add_scalar("Validation/FID", validation_fid, step)
+            with open(fid_log_path, "a", encoding="utf-8") as fid_log:
+                fid_log.write(json.dumps({"iteration": step, "fid": validation_fid}) + "\n")
             print(f"validation FID: {validation_fid:.6f}")
             generator.train()
 
