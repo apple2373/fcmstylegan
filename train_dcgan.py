@@ -19,6 +19,7 @@ from calc_inception import load_patched_inception_v3
 from fid import calc_fid
 
 from sysmex_task1_dataset import SysmexTask1Dataset
+from diff_augment import AUGMENT_FNS, DiffAugment
 
 IMAGE_SIZE = 128
 PROFILE_DIM = 3 * 128
@@ -159,6 +160,18 @@ def calculate_validation_fid(generator, inception, loader, device, latent_dim, m
     )
 
 
+def validate_diff_aug_policy(policy):
+    """Normalize and validate a comma-separated DiffAugment policy."""
+    names = [name.strip() for name in policy.split(",") if name.strip()]
+    unknown = sorted(set(names) - set(AUGMENT_FNS))
+    if unknown:
+        available = ", ".join(sorted(AUGMENT_FNS))
+        raise ValueError(
+            f"Unknown DiffAugment policy {unknown}; choose from: {available}"
+        )
+    return ",".join(names)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Conditional Sysmex Task 1 DCGAN trainer")
     parser.add_argument("--datasplit", required=True)
@@ -185,6 +198,11 @@ def main():
                         help="validation FID batch size; defaults to --batch")
     parser.add_argument("--fid_samples", type=int, default=None,
                         help="maximum validation samples used for FID")
+    parser.add_argument(
+        "--diff_aug_policy", "--diff_aug", dest="diff_aug_policy", default="",
+        metavar="POLICY",
+        help="comma-separated DiffAugment policy (color, translation, cutout); empty disables it",
+    )
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--beta1", type=float, default=0.5)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -199,6 +217,7 @@ def main():
         raise ValueError(f"This DCGAN architecture requires --size {IMAGE_SIZE}")
     if args.base_channels < 16 or args.base_channels % 16:
         raise ValueError("base_channels must be a multiple of 16 and at least 16")
+    args.diff_aug_policy = validate_diff_aug_policy(args.diff_aug_policy)
 
     channel_widths = [
         args.base_channels,
@@ -303,8 +322,12 @@ def main():
         d_optim.zero_grad(set_to_none=True)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_bf16):
             fake = generator(noise, profile).detach()
-            real_score = discriminator(real, profile)
-            fake_score = discriminator(fake, profile)
+            real_score = discriminator(
+                DiffAugment(real, policy=args.diff_aug_policy), profile
+            )
+            fake_score = discriminator(
+                DiffAugment(fake, policy=args.diff_aug_policy), profile
+            )
             d_loss = F.binary_cross_entropy_with_logits(real_score, torch.ones_like(real_score))
             d_loss += F.binary_cross_entropy_with_logits(fake_score, torch.zeros_like(fake_score))
         d_loss.backward()
@@ -315,7 +338,9 @@ def main():
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_bf16):
             fake = generator(noise, profile)
             g_loss = F.binary_cross_entropy_with_logits(
-                discriminator(fake, profile), torch.ones(real.shape[0], device=device)
+                discriminator(
+                    DiffAugment(fake, policy=args.diff_aug_policy), profile
+                ), torch.ones(real.shape[0], device=device)
             )
         g_loss.backward()
         g_optim.step()

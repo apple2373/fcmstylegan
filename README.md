@@ -117,6 +117,29 @@ ToDO
     --g_reg_every 32 \
     ./data/pbcseg_final_v1.lmdb \
     --compile_mode default
+## DiffAugment for DCGAN training
+
+`train_dcgan.py` supports the differentiable augmentation method from the [MIT HAN Lab Data-Efficient GANs repository](https://github.com/mit-han-lab/data-efficient-gans) and the [DiffAugment paper](https://arxiv.org/abs/2006.10738). DiffAugment applies randomly sampled, differentiable image transformations to the inputs of the discriminator. This makes it harder for the discriminator to memorize a small training set and can improve GAN training when data is limited.
+
+The augmentation is applied consistently to real images and generated images during the discriminator update. During the generator update, it is applied to generated images too, so gradients flow through the augmentation into the generator. Validation FID and saved samples are intentionally computed without DiffAugment.
+
+The available policies are:
+
+- `color`: random brightness, saturation, and contrast.
+- `translation`: random spatial translation with padded borders.
+- `cutout`: randomly masks a rectangular image region.
+
+Pass a comma-separated policy to enable it; an empty policy (the default) disables augmentation:
+
+```bash
+python train_dcgan.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --diff_aug_policy color,translation,cutout
+```
+
+`--diff_aug` is an alias for `--diff_aug_policy`. Start with `color,translation,cutout` for very small datasets, or use a subset such as `color,translation` for larger datasets. The selected policy is saved in each run's `args.json`.
+
 ## Conditional brightfield training
 
 `train.py` now trains a grayscale conditional StyleGAN2 using `BrightFieldProfileDataset`. The CSV supplies `cell_id` values, while the preprocessing directory supplies the brightfield PNGs and the `(SSC, CD45, mask)` profile archives:
