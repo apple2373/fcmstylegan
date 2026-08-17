@@ -135,7 +135,7 @@ Pass a comma-separated policy to enable it; an empty policy (the default) disabl
 ```bash
 python train_dcgan.py \
   --datasplit ./data/task1_dataset_split.csv \
-  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --preprocessed_root ./data/task1_processed/ \
   --diff_aug_policy color,translation,cutout
 ```
 
@@ -155,7 +155,7 @@ python train_dcgan.py ... --ema --ema_decay 0.999
 
 ```bash
 python train.py --datasplit ./data/task1_dataset_split.csv \
-  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --preprocessed_root ./data/task1_processed/ \
   --id_column cell_id \
   --size 128 --batch 32 --iter 800000 \
   --channel_multiplier 1 \
@@ -171,11 +171,13 @@ Generated images can be sampled from profiles in the same dataset with:
 ```bash
 python generate.py --ckpt experiments/<run>/checkpoint/010000.pt \
   --csv ./data/task1_dataset_split.csv \
-  --preprocessed_root ./data/Task1FCMPreprocessed/ \
+  --preprocessed_root ./data/task1_processed/ \
   --size 128 --pics 20
 ```
 
 The conditional model is grayscale and expects profile tensors with shape `(batch, 3, 128)`. Existing unconditional/RGB checkpoints are not compatible with this model.
+
+* Task1FCMPreprocessed is old one. task1_processed is correct one.
 
 ## for debugging the fid thing quickly (remove compile option for quicker test)
  CUDA_VISIBLE_DEVICES=0 python train.py \
