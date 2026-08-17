@@ -324,7 +324,8 @@ The trainer is configured through `train_diffusion.py`:
 - `--bf16`: enable bfloat16 autocasting on CUDA.
 - `--compile_mode none|default|reduce-overhead|max-autotune`: enable `torch.compile`; `none` is the default.
 - `--ckpt PATH`: resume from a diffusion checkpoint.
-- `--sample_every N`: save generated sample grids and checkpoints every N iterations.
+- `--sample_every N`: save generated sample grids every N iterations.
+- `--checkpoint_every N`: save checkpoints every N iterations; the default is 10,000.
 - `--fid_every N`: calculate validation FID every N iterations; use `0` to disable it.
 
 The required dataset arguments are:

@@ -162,6 +162,7 @@ def main():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--n_sample", type=int, default=64)
     parser.add_argument("--sample_every", type=int, default=1000)
+    parser.add_argument("--checkpoint_every", type=int, default=10000)
     parser.add_argument("--fid_every", type=int, default=5000)
     parser.add_argument("--fid_batch", type=int, default=None)
     parser.add_argument("--fid_samples", type=int, default=None)
@@ -327,7 +328,7 @@ def main():
             writer.add_scalar("Validation/FID", validation_fid, step)
             print(f"validation FID: {validation_fid:.6f}")
 
-        if args.sample_every > 0 and step % args.sample_every == 0:
+        if args.checkpoint_every > 0 and step % args.checkpoint_every == 0:
             torch.save(
                 {
                     "iteration": step,
