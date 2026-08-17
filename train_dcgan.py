@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import random
 import shutil
 import subprocess
@@ -273,6 +274,7 @@ def main():
         help="fixed random seed for repeatable runs; unset keeps stochastic behavior",
     )
     args = parser.parse_args()
+    print(args)
     if args.size != IMAGE_SIZE:
         raise ValueError(f"This DCGAN architecture requires --size {IMAGE_SIZE}")
     if args.base_channels < 16 or args.base_channels % 16:

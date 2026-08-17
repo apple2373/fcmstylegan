@@ -4,6 +4,7 @@ import argparse
 import copy
 import json
 import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import shutil
 import subprocess
 from datetime import datetime
@@ -180,7 +181,7 @@ def main():
     parser.add_argument("--ckpt", default=None)
     parser.add_argument("--exp_dir", default="experiments/diffusion")
     args = parser.parse_args()
-
+    print(args)
     if args.seed is not None:
         seed_everything(args.seed)
 
