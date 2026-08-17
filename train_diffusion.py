@@ -311,7 +311,7 @@ def main():
             )
             utils.save_image(
                 samples.clamp(-1, 1),
-                os.path.join(sample_dir, f"{step:06d}.png"),
+                os.path.join(sample_dir, f"{step:06d}.jpg"),
                 nrow=max(1, int(args.n_sample ** 0.5)),
                 normalize=True,
                 value_range=(-1, 1),
