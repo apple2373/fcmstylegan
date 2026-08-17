@@ -516,6 +516,12 @@ if __name__ == "__main__":
     )
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
+        "--profile_encoder",
+        choices=("mlp", "cnn"),
+        default="cnn",
+        help="profile conditioning encoder (default: cnn; use mlp for a flattened baseline)",
+    )
+    parser.add_argument(
         "--iter", type=int, default=800000, help="total training iterations"
     )
     parser.add_argument(
@@ -706,13 +712,16 @@ if __name__ == "__main__":
     from model import Generator, Discriminator
 
     generator_base = Generator(
-        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1
+        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1,
+        profile_encoder=args.profile_encoder,
     ).to(device)
     discriminator_base = Discriminator(
-        args.size, channel_multiplier=args.channel_multiplier, in_channels=1
+        args.size, channel_multiplier=args.channel_multiplier, in_channels=1,
+        profile_encoder=args.profile_encoder,
     ).to(device)
     g_ema_base = Generator(
-        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1
+        args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier, out_channels=1,
+        profile_encoder=args.profile_encoder,
     ).to(device)
     g_ema_base.eval()
     accumulate(g_ema_base, generator_base, 0)

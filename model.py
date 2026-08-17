@@ -383,19 +383,28 @@ class ToRGB(nn.Module):
 class ProfileEncoder(nn.Module):
     """Encode the three 128-bin FCM tracks into a conditioning vector."""
 
-    def __init__(self, out_dim):
+    def __init__(self, out_dim, mode="cnn"):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(3, 64, 5, padding=2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv1d(64, 128, 5, stride=2, padding=2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv1d(128, 256, 5, stride=2, padding=2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
-            nn.Linear(256, out_dim),
-        )
+        if mode == "mlp":
+            self.net = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(3 * 128, out_dim),
+                nn.LeakyReLU(0.2, inplace=True),
+            )
+        elif mode == "cnn":
+            self.net = nn.Sequential(
+                nn.Conv1d(3, 64, 5, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv1d(64, 128, 5, stride=2, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv1d(128, 256, 5, stride=2, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.AdaptiveAvgPool1d(1),
+                nn.Flatten(),
+                nn.Linear(256, out_dim),
+            )
+        else:
+            raise ValueError(f"Unknown profile encoder {mode!r}; choose 'mlp' or 'cnn'")
 
     def forward(self, profile):
         if profile.ndim != 3 or tuple(profile.shape[1:]) != (3, 128):
@@ -415,13 +424,14 @@ class Generator(nn.Module):
         blur_kernel=[1, 3, 3, 1],
         lr_mlp=0.01,
         out_channels=1,
+        profile_encoder="cnn",
     ):
         super().__init__()
 
         self.size = size
 
         self.style_dim = style_dim
-        self.profile_encoder = ProfileEncoder(style_dim)
+        self.profile_encoder = ProfileEncoder(style_dim, profile_encoder)
 
         layers = [PixelNorm()]
 
@@ -660,7 +670,14 @@ class ResBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1], in_channels=1):
+    def __init__(
+        self,
+        size,
+        channel_multiplier=2,
+        blur_kernel=[1, 3, 3, 1],
+        in_channels=1,
+        profile_encoder="cnn",
+    ):
         super().__init__()
 
         channels = {
@@ -676,7 +693,7 @@ class Discriminator(nn.Module):
         }
 
         convs = [ConvLayer(in_channels, channels[size], 1)]
-        self.profile_encoder = ProfileEncoder(channels[4])
+        self.profile_encoder = ProfileEncoder(channels[4], profile_encoder)
 
         log_size = int(math.log(size, 2))
 
