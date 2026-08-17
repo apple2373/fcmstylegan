@@ -238,7 +238,7 @@ def main():
                         help="channels at the 4x4 layer; 512 gives 512->256->128->64->32, "
                              "256 gives 256->128->64->32->16")
     parser.add_argument("--size", type=int, default=128)
-    parser.add_argument("--iter", type=int, default=100000)
+    parser.add_argument("--iter", type=int, default=300000)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--n_sample", type=int, default=64)
     parser.add_argument("--sample_every", type=int, default=1000)
