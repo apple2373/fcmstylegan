@@ -24,6 +24,15 @@ from reproducibility import seed_everything, seed_worker
 from sysmex_task1_dataset import SysmexTask1Dataset
 
 
+def maybe_compile(model, compile_mode):
+    mode = str(compile_mode).lower()
+    if mode in {"none", "off", "false", "0"}:
+        return model
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("torch.compile is not available in this PyTorch build")
+    return torch.compile(model, mode=mode)
+
+
 def split_dataset(dataset, split_column):
     if split_column not in dataset.rows[0]:
         raise ValueError(f"CSV has no split column {split_column!r}")
@@ -146,8 +155,8 @@ def main():
     parser.add_argument("--profile_encoder", choices=("cnn", "mlp"), default="cnn")
     parser.add_argument("--base_channels", type=int, default=None)
     parser.add_argument("--dropout", type=float, default=0.0)
-    parser.add_argument("--iter", type=int, default=100000)
-    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--iter", type=int, default=300000)
+    parser.add_argument("--batch", type=int, default=32, help="training batch size (default: 32)")
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -162,6 +171,11 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--bf16", action="store_true")
+    parser.add_argument(
+        "--compile_mode",
+        default="none",
+        help='torch.compile mode; "none" disables compilation',
+    )
     parser.add_argument("--ckpt", default=None)
     parser.add_argument("--exp_dir", default="experiments/diffusion")
     args = parser.parse_args()
@@ -221,21 +235,26 @@ def main():
         generator=val_generator if args.seed is not None else None,
     )
 
-    model = ConditionalUNet(
+    model_base = ConditionalUNet(
         profile_encoder=args.profile_encoder,
         backbone=args.backbone,
         base_channels=args.base_channels,
         dropout=args.dropout,
     ).to(device)
-    ema = copy.deepcopy(model).eval()
+    # Keep the base model uncompiled so optimizer, EMA, and checkpoint keys
+    # remain identical to the ordinary model (without _orig_mod prefixes).
+    model = maybe_compile(model_base, args.compile_mode)
+    ema = copy.deepcopy(model_base).eval()
     for parameter in ema.parameters():
         parameter.requires_grad_(False)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(
+        model_base.parameters(), lr=args.lr, weight_decay=args.weight_decay
+    )
     start = 0
 
     if args.ckpt:
         checkpoint = torch.load(args.ckpt, map_location=device)
-        model.load_state_dict(checkpoint["model"])
+        model_base.load_state_dict(checkpoint["model"])
         ema.load_state_dict(checkpoint["ema"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         start = checkpoint.get("iteration", 0)
@@ -279,7 +298,7 @@ def main():
             loss = process.training_loss(model, image, profile)
         loss.backward()
         optimizer.step()
-        update_ema(ema, model, decay=0.9999)
+        update_ema(ema, model_base, decay=0.9999)
 
         step = iteration + 1
         progress.set_description(f"loss: {loss.item():.5f}")
@@ -312,7 +331,7 @@ def main():
             torch.save(
                 {
                     "iteration": step,
-                    "model": model.state_dict(),
+                    "model": model_base.state_dict(),
                     "ema": ema.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "args": vars(args),

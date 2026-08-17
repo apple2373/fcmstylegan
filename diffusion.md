@@ -125,7 +125,7 @@ Example runs:
     --sampler ddim \
     --sample_steps 50 \
     --seed 123 \
-    --batch 16 \
+    --batch 32 \
     --num_workers 4 \
     --sample_every 1000 \
     --fid_every 5000 \
@@ -322,6 +322,7 @@ The trainer is configured through `train_diffusion.py`:
 - `--sample_steps N`: override the number of sampling steps. If omitted, DDPM+DDIM uses **50** steps and EDM+Heun uses **40** steps.
 - `--seed N`: enable reproducible model, sampler, DataLoader, and worker randomness.
 - `--bf16`: enable bfloat16 autocasting on CUDA.
+- `--compile_mode none|default|reduce-overhead|max-autotune`: enable `torch.compile`; `none` is the default.
 - `--ckpt PATH`: resume from a diffusion checkpoint.
 - `--sample_every N`: save generated sample grids and checkpoints every N iterations.
 - `--fid_every N`: calculate validation FID every N iterations; use `0` to disable it.
