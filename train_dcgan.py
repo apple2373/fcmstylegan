@@ -49,8 +49,42 @@ def update_ema(ema_model, model, decay):
         ema_buffer.copy_(model_buffers[name])
 
 
+class ProfileEncoder(nn.Module):
+    """Encode the three 128-bin FCM tracks for DCGAN conditioning."""
+
+    def __init__(self, out_dim, mode="mlp"):
+        super().__init__()
+        if mode == "mlp":
+            self.net = nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(PROFILE_DIM, out_dim),
+                nn.LeakyReLU(0.2, True),
+            )
+        elif mode == "cnn":
+            self.net = nn.Sequential(
+                nn.Conv1d(3, 64, 5, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv1d(64, 128, 5, stride=2, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Conv1d(128, 256, 5, stride=2, padding=2),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.AdaptiveAvgPool1d(1),
+                nn.Flatten(),
+                nn.Linear(256, out_dim),
+            )
+        else:
+            raise ValueError(f"Unknown profile encoder {mode!r}; choose 'mlp' or 'cnn'")
+
+    def forward(self, profile):
+        if profile.ndim != 3 or tuple(profile.shape[1:]) != (3, 128):
+            raise ValueError(
+                f"profile must have shape (batch, 3, 128), got {tuple(profile.shape)}"
+            )
+        return self.net(profile)
+
+
 class Generator(nn.Module):
-    def __init__(self, latent_dim=128, base_channels=512):
+    def __init__(self, latent_dim=128, base_channels=512, profile_encoder="mlp"):
         super().__init__()
         if base_channels < 16 or base_channels % 16:
             raise ValueError("base_channels must be a multiple of 16 and at least 16")
@@ -58,9 +92,7 @@ class Generator(nn.Module):
             base_channels, base_channels // 2, base_channels // 4,
             base_channels // 8, base_channels // 16,
         )
-        self.profile = nn.Sequential(
-            nn.Flatten(), nn.Linear(PROFILE_DIM, 256), nn.LeakyReLU(0.2, True)
-        )
+        self.profile = ProfileEncoder(256, profile_encoder)
         self.project = nn.Sequential(
             nn.Linear(latent_dim + 256, c4 * 4 * 4),
             nn.BatchNorm1d(c4 * 4 * 4), nn.ReLU(True)
@@ -80,7 +112,7 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, base_channels=512):
+    def __init__(self, base_channels=512, profile_encoder="mlp"):
         super().__init__()
         if base_channels < 16 or base_channels % 16:
             raise ValueError("base_channels must be a multiple of 16 and at least 16")
@@ -95,9 +127,7 @@ class Discriminator(nn.Module):
             nn.Conv2d(c16, c8, 4, 2, 1, bias=False), nn.BatchNorm2d(c8), nn.LeakyReLU(0.2, True),
             nn.Conv2d(c8, c4, 4, 2, 1, bias=False), nn.BatchNorm2d(c4), nn.LeakyReLU(0.2, True)
         )
-        self.profile = nn.Sequential(
-            nn.Flatten(), nn.Linear(PROFILE_DIM, c4), nn.LeakyReLU(0.2, True)
-        )
+        self.profile = ProfileEncoder(c4, profile_encoder)
         self.output = nn.Linear(c4 * 4 * 4 + c4, 1)
 
     def forward(self, image, profile):
@@ -198,6 +228,12 @@ def main():
     )
     parser.add_argument("--split_column", default="split")
     parser.add_argument("--latent", type=int, default=128)
+    parser.add_argument(
+        "--profile_encoder",
+        choices=("mlp", "cnn"),
+        default="mlp",
+        help="profile conditioning encoder (default: mlp; use cnn to match train.py)",
+    )
     parser.add_argument("--base_channels", type=int, default=256,
                         help="channels at the 4x4 layer; 512 gives 512->256->128->64->32, "
                              "256 gives 256->128->64->32->16")
@@ -288,11 +324,17 @@ def main():
         worker_init_fn=seed_worker if args.seed is not None else None,
         generator=val_loader_generator if args.seed is not None else None
     )
-    generator_base = Generator(args.latent, args.base_channels).to(device)
-    discriminator_base = Discriminator(args.base_channels).to(device)
+    generator_base = Generator(
+        args.latent, args.base_channels, profile_encoder=args.profile_encoder
+    ).to(device)
+    discriminator_base = Discriminator(
+        args.base_channels, profile_encoder=args.profile_encoder
+    ).to(device)
     generator_ema = None
     if args.ema:
-        generator_ema = Generator(args.latent, args.base_channels).to(device)
+        generator_ema = Generator(
+            args.latent, args.base_channels, profile_encoder=args.profile_encoder
+        ).to(device)
         generator_ema.load_state_dict(generator_base.state_dict())
         generator_ema.eval()
         for parameter in generator_ema.parameters():
