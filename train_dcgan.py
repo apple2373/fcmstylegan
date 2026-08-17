@@ -17,6 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from calc_inception import load_patched_inception_v3
 from fid import calc_fid
+from reproducibility import seed_everything, seed_worker
 
 from sysmex_task1_dataset import SysmexTask1Dataset
 from diff_augment import AUGMENT_FNS, DiffAugment
@@ -229,7 +230,12 @@ def main():
                         help="torch.compile mode; none disables compilation")
     parser.add_argument("--ckpt", default=None)
     parser.add_argument("--exp_dir", default="experiments/dcgan/dafault")
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="fixed random seed for repeatable runs; unset keeps stochastic behavior",
+    )
     args = parser.parse_args()
     if args.size != IMAGE_SIZE:
         raise ValueError(f"This DCGAN architecture requires --size {IMAGE_SIZE}")
@@ -250,11 +256,7 @@ def main():
     print("Discriminator: " + " → ".join(map(str, [1] + list(reversed(channel_widths)))))
 
     if args.seed is not None:
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(args.seed)
+        seed_everything(args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if hasattr(torch, "set_float32_matmul_precision"):
@@ -267,15 +269,24 @@ def main():
     )
     subsets = split_dataset(dataset, args.split_column)
     train_set, val_set = subsets["train"], subsets["val"]
+    train_loader_generator = torch.Generator()
+    val_loader_generator = torch.Generator()
+    if args.seed is not None:
+        train_loader_generator.manual_seed(args.seed)
+        val_loader_generator.manual_seed(args.seed + 1)
     loader = data.DataLoader(
         train_set, batch_size=args.batch, shuffle=True, drop_last=True,
         num_workers=args.num_workers, pin_memory=device.type == "cuda",
-        persistent_workers=args.num_workers > 0
+        persistent_workers=args.num_workers > 0,
+        worker_init_fn=seed_worker if args.seed is not None else None,
+        generator=train_loader_generator if args.seed is not None else None
     )
     val_loader = data.DataLoader(
         val_set, batch_size=args.fid_batch or args.batch, shuffle=False,
         num_workers=args.num_workers, pin_memory=device.type == "cuda",
-        persistent_workers=args.num_workers > 0
+        persistent_workers=args.num_workers > 0,
+        worker_init_fn=seed_worker if args.seed is not None else None,
+        generator=val_loader_generator if args.seed is not None else None
     )
     generator_base = Generator(args.latent, args.base_channels).to(device)
     discriminator_base = Discriminator(args.base_channels).to(device)

@@ -38,6 +38,7 @@ from distributed import (
 from non_leaking import augment, AdaptiveAugment
 from fid import calc_fid
 from calc_inception import load_patched_inception_v3
+from reproducibility import seed_everything, seed_worker
 
 
 def maybe_compile(model, compile_mode):
@@ -64,12 +65,12 @@ def make_run_dir(exp_dir, wait_seconds=5):
         time.sleep(wait_seconds)
 
 
-def data_sampler(dataset, shuffle, distributed):
+def data_sampler(dataset, shuffle, distributed, seed=0, generator=None):
     if distributed:
-        return data.distributed.DistributedSampler(dataset, shuffle=shuffle)
+        return data.distributed.DistributedSampler(dataset, shuffle=shuffle, seed=seed)
 
     if shuffle:
-        return data.RandomSampler(dataset)
+        return data.RandomSampler(dataset, generator=generator)
 
     else:
         return data.SequentialSampler(dataset)
@@ -89,9 +90,18 @@ def accumulate(model1, model2, decay=0.999):
 
 
 def sample_data(loader):
+    epoch = 0
+    sampler = loader.sampler
+
     while True:
+        # DistributedSampler needs an advancing epoch to reshuffle each pass.
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(epoch)
+
         for batch in loader:
             yield batch
+
+        epoch += 1
 
 
 def d_logistic_loss(real_pred, fake_pred):
@@ -660,9 +670,18 @@ if __name__ == "__main__":
         default=10000,
         help="save a checkpoint every N iterations",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="fixed random seed for repeatable runs; unset keeps stochastic behavior",
+    )
     
     args = parser.parse_args()
     args.local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
+
+    if args.seed is not None:
+        seed_everything(args.seed)
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = n_gpu > 1
@@ -783,14 +802,31 @@ if __name__ == "__main__":
             f"val={len(val_dataset)}, test={len(test_dataset)}"
         )
 
+    train_loader_generator = torch.Generator()
+    val_loader_generator = torch.Generator()
+    if args.seed is not None:
+        # Keep sampler ordering globally reproducible, while making every
+        # (distributed rank, worker) pair use a distinct worker RNG stream.
+        rank_seed = args.seed + get_rank()
+        train_loader_generator.manual_seed(rank_seed)
+        val_loader_generator.manual_seed(rank_seed + 1)
+
     loader = data.DataLoader(
         train_dataset,
         batch_size=args.batch,
-        sampler=data_sampler(train_dataset, shuffle=True, distributed=args.distributed),
+        sampler=data_sampler(
+            train_dataset,
+            shuffle=True,
+            distributed=args.distributed,
+            seed=args.seed if args.seed is not None else 0,
+            generator=train_loader_generator if args.seed is not None else None,
+        ),
         drop_last=True,
         num_workers=args.num_workers,
         pin_memory=True,
-        persistent_workers=True if args.num_workers > 0 else False
+        persistent_workers=True if args.num_workers > 0 else False,
+        worker_init_fn=seed_worker if args.seed is not None else None,
+        generator=train_loader_generator if args.seed is not None else None,
     )
     val_loader = data.DataLoader(
         val_dataset,
@@ -800,6 +836,8 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         pin_memory=True,
         persistent_workers=True if args.num_workers > 0 else False,
+        worker_init_fn=seed_worker if args.seed is not None else None,
+        generator=val_loader_generator if args.seed is not None else None,
     )
     
     # 1. Generate a single run directory on rank 0 and share it with all ranks.
