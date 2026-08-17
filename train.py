@@ -578,7 +578,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exp_dir",
         type=str,
-        default="experiments",
+        default="experiments/stylegan",
         help="root directory for training runs",
     )
     parser.add_argument("--lr", type=float, default=0.002, help="learning rate")

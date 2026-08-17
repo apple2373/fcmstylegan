@@ -228,7 +228,7 @@ def main():
     parser.add_argument("--compile_mode", default="none",
                         help="torch.compile mode; none disables compilation")
     parser.add_argument("--ckpt", default=None)
-    parser.add_argument("--exp_dir", default="experiments_dcgan")
+    parser.add_argument("--exp_dir", default="experiments/dcgan/dafault")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
     if args.size != IMAGE_SIZE:
