@@ -673,7 +673,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=123,
         help="fixed random seed for repeatable runs; unset keeps stochastic behavior",
     )
     
