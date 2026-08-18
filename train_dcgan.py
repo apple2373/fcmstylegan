@@ -459,7 +459,7 @@ def main():
             sample_generator.eval()
             with torch.no_grad():
                 samples = sample_generator(fixed_noise, fixed_profile)
-            utils.save_image(samples, os.path.join(run_dir, "sample", f"{step:06d}.png"),
+            utils.save_image(samples, os.path.join(run_dir, "sample", f"{step:06d}.jpg"),
                              nrow=int(args.n_sample ** 0.5), normalize=True, value_range=(-1, 1))
             generator.train()
         if args.checkpoint_every > 0 and step % args.checkpoint_every == 0:
