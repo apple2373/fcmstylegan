@@ -48,6 +48,18 @@ uv pip install tqdm pillow lmdb click ninja tensorboard
 ``` 
 
 ```
+rsync -av --max-size=10M  rosea100:/home/satoshi.tsutsui/satoshihdd/experiments/fcmstylegan/ /home/satoshi/projects/fcmstylegan/experiments/eeeg/
+
+mkdir -p /dev/shm/satoshi.tsutsui/data
+cp data/task1_processed.zip /dev/shm/satoshi.tsutsui/data/ 
+unzip -q /dev/shm/satoshi.tsutsui/data/task1_processed.zip -d /dev/shm/satoshi.tsutsui/data/
+rm /dev/shm/satoshi.tsutsui/data/task1_processed.zip
+
+conda activate fcmstylegan; cd ~/satoshissd2/fcmstylegan
+CUDA_VISIBLE_DEVICES=0 python run.py --cmd ./exp_dcgan.yaml
+```
+
+```
 python train.py --size 128 --batch 16 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb 
 
 python train.py --size 128 --batch 32 --iter 800000 --channel_multiplier 1 ./data/pbcseg_final_v1.lmdb --bf16 --d_reg_every 64 --g_reg_every 32

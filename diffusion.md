@@ -362,3 +362,6 @@ python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --p
 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone adm --objective ddpm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
 
 
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/      --backbone adm --objective edm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000 
+
+
