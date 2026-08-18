@@ -353,3 +353,12 @@ A complete example is:
 `--sampler` affects generation during sample saving and FID evaluation; it does not change the training objective. For DDPM training, `auto` selects DDIM with 50 steps, `ddpm` uses the full ancestral schedule, and `ddim` uses 50 steps unless `--sample_steps` overrides it. For EDM training, `auto` selects Heun with 40 steps; use `euler` or `heun` to choose explicitly.
 
 Each run writes `args.json`, sample images, and checkpoints under `--exp_dir`. Checkpoints contain the online model, EMA model, optimizer state, iteration, and arguments. The EMA model is used for samples and FID.
+
+
+# Command notes;
+
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact     --objective ddpm     --profile_encoder cnn     --sampler ddim     --sample_steps 50     --seed 123     --batch 64     --num_workers 4     --sample_every 1000   --exp_dir experiments/diffusion/phase1_compact_ddpm_ddim --bf16 --compile default --fid_samples 1000 
+
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone adm --objective ddpm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
+
+
