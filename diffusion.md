@@ -352,7 +352,7 @@ A complete example is:
 
 `--sampler` affects generation during sample saving and FID evaluation; it does not change the training objective. For DDPM training, `auto` selects DDIM with 50 steps, `ddpm` uses the full ancestral schedule, and `ddim` uses 50 steps unless `--sample_steps` overrides it. For EDM training, `auto` selects Heun with 40 steps; use `euler` or `heun` to choose explicitly.
 
-Each run writes `args.json`, sample images, and checkpoints under `--exp_dir`. Checkpoints contain the online model, EMA model, optimizer state, iteration, and arguments. The EMA model is used for samples and FID.
+Each run writes `args.json`, `validation_fid.jsonl`, sample images, checkpoints, and Git provenance files (`git_status.txt`, `git_hash.txt`, and `git_diff.txt`) under `--exp_dir`. Checkpoints contain the online model, EMA model, optimizer state, iteration, and arguments. The EMA model is used for samples and FID.
 
 
 # Command notes;

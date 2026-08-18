@@ -6,7 +6,6 @@ import json
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import shutil
-import subprocess
 from datetime import datetime
 
 import numpy as np
@@ -22,6 +21,7 @@ from diffusion_model import ConditionalUNet
 from diffusion_process import DDPMProcess, EDMProcess
 from fid import calc_fid
 from reproducibility import seed_everything, seed_worker
+from run_utils import save_git_metadata
 from sysmex_task1_dataset import SysmexTask1Dataset
 
 
@@ -264,19 +264,18 @@ def main():
     run_dir = make_run_dir(args.exp_dir)
     sample_dir = os.path.join(run_dir, "sample")
     checkpoint_dir = os.path.join(run_dir, "checkpoint")
+    fid_log_path = os.path.join(run_dir, "validation_fid.jsonl")
     os.makedirs(sample_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
+    if args.fid_every > 0:
+        open(fid_log_path, "a", encoding="utf-8").close()
     print("run_dir:", run_dir)
     print("device:", device, "objective:", args.objective, "backbone:", args.backbone)
 
     with open(os.path.join(run_dir, "args.json"), "w", encoding="utf-8") as file:
         json.dump(vars(args), file, indent=2)
     shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
-    try:
-        with open(os.path.join(run_dir, "git_hash.txt"), "w", encoding="utf-8") as file:
-            file.write(subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+    save_git_metadata(run_dir)
 
     writer = SummaryWriter(log_dir=run_dir)
     fixed_profile = sample_profiles(val_set, args.n_sample, device)
@@ -327,6 +326,8 @@ def main():
                 sampling_steps, args.fid_samples,
             )
             writer.add_scalar("Validation/FID", validation_fid, step)
+            with open(fid_log_path, "a", encoding="utf-8") as fid_log:
+                fid_log.write(json.dumps({"iteration": step, "fid": validation_fid}) + "\n")
             print(f"validation FID: {validation_fid:.6f}")
 
         if args.checkpoint_every > 0 and step % args.checkpoint_every == 0:

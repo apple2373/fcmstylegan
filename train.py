@@ -15,7 +15,6 @@ from torchvision import transforms, utils
 from tqdm import tqdm
 
 import json
-import subprocess
 import shutil
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -38,6 +37,7 @@ from distributed import (
 from non_leaking import augment, AdaptiveAugment
 from fid import calc_fid
 from calc_inception import load_patched_inception_v3
+from run_utils import save_git_metadata
 from reproducibility import seed_everything, seed_worker
 
 
@@ -882,27 +882,8 @@ if __name__ == "__main__":
         # (2) Copy the currently running train.py file for backup
         shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
 
-        # (3) Retrieve and save Git information (status, hash, diff)
-        try:
-            # Get git status
-            git_status = subprocess.check_output(["git", "status"], stderr=subprocess.STDOUT).decode("utf-8")
-            with open(os.path.join(run_dir, "git_status.txt"), "w", encoding="utf-8") as f:
-                f.write(git_status)
-
-            # Get git commit hash (latest commit ID)
-            git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.STDOUT).decode("utf-8")
-            with open(os.path.join(run_dir, "git_hash.txt"), "w", encoding="utf-8") as f:
-                f.write(git_hash.strip())
-
-            # Get git diff (changes since the last commit)
-            git_diff = subprocess.check_output(["git", "diff"], stderr=subprocess.STDOUT).decode("utf-8")
-            with open(os.path.join(run_dir, "git_diff.txt"), "w", encoding="utf-8") as f:
-                f.write(git_diff)
-
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # Skip if it is not a git repository or git command is not installed
-            with open(os.path.join(run_dir, "git_info_error.txt"), "w") as f:
-                f.write("Git information could not be retrieved. (Not a git repository or git not installed)")
+        # Save Git status, commit hash, and diff for provenance.
+        save_git_metadata(run_dir)
     else:
         writer = None
 

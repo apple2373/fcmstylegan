@@ -4,7 +4,6 @@ import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import random
 import shutil
-import subprocess
 from datetime import datetime
 
 import numpy as np
@@ -17,6 +16,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from calc_inception import load_patched_inception_v3
+from run_utils import save_git_metadata
 from fid import calc_fid
 from reproducibility import seed_everything, seed_worker
 
@@ -371,27 +371,7 @@ def main():
         json.dump(vars(args), file, indent=2)
     shutil.copy(__file__, os.path.join(run_dir, os.path.basename(__file__)))
 
-    try:
-        git_status = subprocess.check_output(
-            ["git", "status"], stderr=subprocess.STDOUT
-        ).decode("utf-8")
-        with open(os.path.join(run_dir, "git_status.txt"), "w", encoding="utf-8") as file:
-            file.write(git_status)
-
-        git_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.STDOUT
-        ).decode("utf-8")
-        with open(os.path.join(run_dir, "git_hash.txt"), "w", encoding="utf-8") as file:
-            file.write(git_hash.strip())
-
-        git_diff = subprocess.check_output(
-            ["git", "diff"], stderr=subprocess.STDOUT
-        ).decode("utf-8")
-        with open(os.path.join(run_dir, "git_diff.txt"), "w", encoding="utf-8") as file:
-            file.write(git_diff)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        with open(os.path.join(run_dir, "git_info_error.txt"), "w", encoding="utf-8") as file:
-            file.write("Git information could not be retrieved. (Not a git repository or git not installed)\n")
+    save_git_metadata(run_dir)
 
     writer = SummaryWriter(log_dir=run_dir)
     inception = None

@@ -48,7 +48,7 @@ uv pip install tqdm pillow lmdb click ninja tensorboard
 ``` 
 
 ```
-rsync -av --max-size=10M  rosea100:/home/satoshi.tsutsui/satoshihdd/experiments/fcmstylegan/ /home/satoshi/projects/fcmstylegan/experiments/eeeg/
+ rsync -aAX --info=progress2 --no-i-r  --max-size=10M  eeeg:/home/satoshi.tsutsui/satoshihdd/experiments/fcmstylegan/ /home/satoshi/projects/fcmstylegan/experiments/eeeg/
 
 mkdir -p /dev/shm/satoshi.tsutsui/data
 cp data/task1_processed.zip /dev/shm/satoshi.tsutsui/data/ 
