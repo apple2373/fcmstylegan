@@ -359,8 +359,11 @@ Each run writes `args.json`, `validation_fid.jsonl`, sample images, checkpoints,
 
 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact     --objective ddpm     --profile_encoder cnn     --sampler ddim     --sample_steps 50     --seed 123     --batch 64     --num_workers 4     --sample_every 1000   --exp_dir experiments/diffusion/phase1_compact_ddpm_ddim --bf16 --compile default --fid_samples 1000 
 
-python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone adm --objective ddpm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
 
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --sampler ddpm  --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
+
+python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone adm --objective ddpm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000
 
 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/      --backbone adm --objective edm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000 
 

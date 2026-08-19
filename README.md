@@ -458,3 +458,49 @@ CUDA_VISIBLE_DEVICES=0 python3 train.py \
 
 ### current default
 CUDA_VISIBLE_DEVICES=0 python3 train.py       --datasplit ./data/task1_dataset_split.csv       --preprocessed_root ./data/task1_processed/       --size 128       --batch 32       --iter 800000       --channel_multiplier 1       --lr 0.001       --d_reg_every 16       --g_reg_every 4       --augment       --bf16       --compile_mode default       --brightfield_postfix _brightfield_crop_masked_normalized_avebg_pad128.png
+
+
+## Evaluation
+• Implemented evaluate.py.
+
+  It supports:
+
+  - StyleGAN, DCGAN, and diffusion checkpoints
+  - Test/validation split selection
+  - FID, PSNR, SSIM, and LPIPS
+  - EMA weights when available
+  - Manual overrides for architecture and evaluation arguments
+  - Diffusion sampler overrides
+  - JSON output via --output
+
+  Explicit CLI arguments override args.json and checkpoint arguments.
+
+  Example diffusion evaluation:
+
+  /home/satoshi/miniconda3/envs/fcmstylegan/bin/python evaluate.py \
+    --model diffusion \
+    --ckpt experiments/diffusion/<run>/checkpoint/010000.pt \
+    --datasplit data/task1_dataset_split.csv \
+    --preprocessed_root data/task1_processed \
+    --split test \
+    --sampler ddim \
+    --sample_steps 25 \
+    --num_samples 1000 \
+    --batch 32 \
+    --seed 123 \
+    --output diffusion_eval.json
+
+  Example StyleGAN override:
+
+  /home/satoshi/miniconda3/envs/fcmstylegan/bin/python evaluate.py \
+    --model stylegan \
+    --ckpt experiments/stylegan/<run>/checkpoint/010000.pt \
+    --datasplit data/task1_dataset_split.csv \
+    --preprocessed_root data/task1_processed \
+    --profile_encoder cnn \
+    --channel_multiplier 2 \
+    --num_samples 1000
+
+  Also fixed the deprecated LPIPS import in lpips/__init__.py.
+
+  Syntax, import, and CLI help checks pass. The new changes are currently uncommitted.
