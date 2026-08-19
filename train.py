@@ -492,7 +492,7 @@ def train(
                         "g_ema": g_ema_base.state_dict(),
                         "g_optim": g_optim.state_dict(),
                         "d_optim": d_optim.state_dict(),
-                        "args": args,
+                        "args": vars(args),
                         "ada_aug_p": ada_aug_p,
                         "validation_fid": validation_fid,
                     },
