@@ -84,3 +84,10 @@ python evaluate.py \
   --use_mask \
   --output dcgan_eval.json
 ```
+Generated images can be saved as individual grayscale PNG files with:
+
+```bash
+--save_images_dir generated_dcgan
+```
+
+Filenames are derived from the dataset cell IDs.

@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 from pathlib import Path
 
+from PIL import Image
 import numpy as np
 import torch
 from skimage.metrics import structural_similarity
@@ -233,6 +235,7 @@ def main():
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--output", default=None, help="aggregate metrics JSON path")
     parser.add_argument("--per_image_output", default=None, help="per-image metrics JSONL path")
+    parser.add_argument("--save_images_dir", default=None, help="directory for generated PNG images")
     parser.add_argument("--device", default=None)
     parser.add_argument("--latent", type=int, default=None)
     parser.add_argument("--n_mlp", type=int, default=None)
@@ -283,11 +286,23 @@ def main():
         from lpips import PerceptualLoss
         lpips_model = PerceptualLoss(net="alex", use_gpu=device.type == "cuda", gpu_ids=[device.index or 0])
 
+    if cli.save_images_dir:
+        Path(cli.save_images_dir).mkdir(parents=True, exist_ok=True)
+    image_offset = 0
+
     for batch in tqdm(loader, desc="evaluating"):
         real = batch["image"].to(device)
         profiles = batch["profile"].to(device)
         fake = generate(generator, cli.model, profiles, config, cli, device)
         real01, fake01 = as_zero_one(real), as_zero_one(fake)
+        if cli.save_images_dir:
+            batch_ids = image_ids[image_offset:image_offset + fake01.shape[0]]
+            for image_id, image in zip(batch_ids, fake01.cpu()):
+                safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(image_id)).strip("._") or "image"
+                Image.fromarray(
+                    (image[0].numpy() * 255).round().astype(np.uint8)
+                ).save(Path(cli.save_images_dir) / f"{safe_id}.png")
+        image_offset += fake01.shape[0]
         real_features.append(inception(inception_input(real01))[0].flatten(1).cpu())
         fake_features.append(inception(inception_input(fake01))[0].flatten(1).cpu())
         real_images.append(real01.cpu())
