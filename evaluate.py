@@ -141,7 +141,7 @@ def calculate_fid(real_features, fake_features):
     ))
 
 
-def paired_metrics(real_images, fake_images, lpips_model=None):
+def paired_metrics(real_images, fake_images, lpips_model=None, lpips_batch=16):
     real = real_images.cpu().numpy()[:, 0]
     fake = fake_images.cpu().numpy()[:, 0]
     psnr_values, ssim_values = [], []
@@ -155,10 +155,12 @@ def paired_metrics(real_images, fake_images, lpips_model=None):
         "ssim_mean": float(np.mean(ssim_values)),
     }
     if lpips_model is not None:
-        real_rgb = real_images.repeat(1, 3, 1, 1) * 2 - 1
-        fake_rgb = fake_images.repeat(1, 3, 1, 1) * 2 - 1
-        values = lpips_model(real_rgb, fake_rgb).detach().flatten().cpu().numpy()
-        result["lpips_mean"] = float(values.mean())
+        values = []
+        for start in range(0, len(real_images), lpips_batch):
+            real_rgb = real_images[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
+            fake_rgb = fake_images[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
+            values.append(lpips_model(real_rgb, fake_rgb).detach().flatten().cpu())
+        result["lpips_mean"] = float(torch.cat(values).mean())
     return result
 
 
@@ -189,6 +191,7 @@ def main():
     parser.add_argument("--sampler", choices=("auto", "ddpm", "ddim", "euler", "heun"), default=None)
     parser.add_argument("--sample_steps", type=int, default=None)
     parser.add_argument("--no_lpips", action="store_true")
+    parser.add_argument("--lpips_batch", type=int, default=16)
     cli = parser.parse_args()
 
     seed_everything(cli.seed)
@@ -239,7 +242,7 @@ def main():
         "num_samples": len(real_images),
         "seed": cli.seed,
         "fid": calculate_fid(real_features, fake_features),
-        **paired_metrics(real_images, fake_images, lpips_model),
+        **paired_metrics(real_images, fake_images, lpips_model, cli.lpips_batch),
     }
     if cli.model == "diffusion":
         _, objective, sampler, steps = make_diffusion_process(config, cli, device)
