@@ -504,3 +504,43 @@ CUDA_VISIBLE_DEVICES=0 python3 train.py       --datasplit ./data/task1_dataset_s
   Also fixed the deprecated LPIPS import in lpips/__init__.py.
 
   Syntax, import, and CLI help checks pass. The new changes are currently uncommitted.
+
+
+  • Example command:
+
+  /home/satoshi/miniconda3/envs/fcmstylegan/bin/python \
+    /home/satoshi/projects/fcmstylegan/evaluate.py \
+    --model dcgan \
+    --preprocessed_root /home/satoshi/projects/fcmstylegan/data/task1_processed \
+    --split test \
+    --profile_encoder mlp \
+    --latent 128 \
+    --base_channels 512 \
+    --size 128 \
+    --num_samples 1000 \
+    --batch 32 \
+    --seed 123 \
+    --output dcgan512mlp_eval.json
+
+  If the processed dataset is elsewhere, replace --preprocessed_root.
+
+  To skip LPIPS temporarily:
+
+  --no_lpips
+
+
+› i do not want to override anything just give me minimum command
+
+
+• /home/satoshi/miniconda3/envs/fcmstylegan/bin/python evaluate.py \
+    --model dcgan \
+    --ckpt /home/satoshi/projects/fcmstylegan/experiments/dcgan512mlp/checkpoint/200000.pt \
+    --datasplit data/task1_dataset_split.csv \
+    --preprocessed_root data/task1_processed
+
+
+    python evaluate.py \
+    --model dcgan \
+    --ckpt /home/satoshi/projects/fcmstylegan/experiments/dcgan512mlp/checkpoint/200000.pt \
+    --datasplit data/task1_dataset_split.csv \
+    --preprocessed_root data/task1_processed     --output dcgan512mlp_eval.json
