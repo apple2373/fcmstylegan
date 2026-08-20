@@ -98,3 +98,7 @@ When `--use_mask` is enabled, LPIPS reports both:
   bounding box with an 8-pixel context margin, then resized consistently.
 
 The per-image JSONL contains `lpips` and `lpips_crop` for the same two values.
+With `--use_mask`, the evaluator also reports `fid_crop`. It uses the real
+foreground mask bounding box with the same 8-pixel context margin as cropped
+LPIPS, applies that crop to both real and generated images, and computes FID
+on the resized crops. Standard `fid` remains the full-image metric.

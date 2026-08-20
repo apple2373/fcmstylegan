@@ -149,6 +149,31 @@ def _metric_value(value):
     return value if np.isfinite(value) else None
 
 
+def foreground_crops(real_images, fake_images, masks, margin=8):
+    """Crop real/fake pairs using real masks and resize crops to input size."""
+    crop_real, crop_fake = [], []
+    mask_array = masks.cpu().numpy()[:, 0]
+    for index, mask in enumerate(mask_array):
+        ys, xs = np.where(mask > 0)
+        if len(ys) == 0:
+            raise ValueError(f"Mask at index {index} is empty")
+        y0 = max(0, int(ys.min()) - margin)
+        y1 = min(real_images.shape[-2], int(ys.max()) + margin + 1)
+        x0 = max(0, int(xs.min()) - margin)
+        x1 = min(real_images.shape[-1], int(xs.max()) + margin + 1)
+        crop_real.append(real_images[index:index + 1, :, y0:y1, x0:x1])
+        crop_fake.append(fake_images[index:index + 1, :, y0:y1, x0:x1])
+    crop_real = torch.cat([
+        F.interpolate(image, size=real_images.shape[-2:], mode="bilinear", align_corners=False)
+        for image in crop_real
+    ])
+    crop_fake = torch.cat([
+        F.interpolate(image, size=fake_images.shape[-2:], mode="bilinear", align_corners=False)
+        for image in crop_fake
+    ])
+    return crop_real, crop_fake
+
+
 def paired_metrics(
     real_images,
     fake_images,
@@ -220,26 +245,7 @@ def paired_metrics(
             # Crop both images using the real-image foreground mask. A fixed
             # margin preserves local context without allowing the background
             # to dominate the perceptual comparison.
-            crop_real, crop_fake = [], []
-            for index, mask in enumerate(mask_array):
-                ys, xs = np.where(mask > 0)
-                if len(ys) == 0:
-                    raise ValueError(f"Mask for image {image_ids[index]!r} is empty")
-                margin = 8
-                y0 = max(0, int(ys.min()) - margin)
-                y1 = min(real_images.shape[-2], int(ys.max()) + margin + 1)
-                x0 = max(0, int(xs.min()) - margin)
-                x1 = min(real_images.shape[-1], int(xs.max()) + margin + 1)
-                crop_real.append(real_images[index:index + 1, :, y0:y1, x0:x1])
-                crop_fake.append(fake_images[index:index + 1, :, y0:y1, x0:x1])
-            crop_real = torch.cat([
-                F.interpolate(image, size=real_images.shape[-2:], mode="bilinear", align_corners=False)
-                for image in crop_real
-            ])
-            crop_fake = torch.cat([
-                F.interpolate(image, size=fake_images.shape[-2:], mode="bilinear", align_corners=False)
-                for image in crop_fake
-            ])
+            crop_real, crop_fake = foreground_crops(real_images, fake_images, masks)
             crop_values = []
             for start in range(0, len(crop_real), lpips_batch):
                 real_rgb = crop_real[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
@@ -362,6 +368,17 @@ def main():
         "fid": calculate_fid(real_features, fake_features),
         **paired_result,
     }
+    if cli.use_mask:
+        crop_real, crop_fake = foreground_crops(real_images, fake_images, masks)
+        crop_real_features = [
+            inception(inception_input(crop_real[start:start + cli.batch]))[0].flatten(1).cpu()
+            for start in range(0, len(crop_real), cli.batch)
+        ]
+        crop_fake_features = [
+            inception(inception_input(crop_fake[start:start + cli.batch]))[0].flatten(1).cpu()
+            for start in range(0, len(crop_fake), cli.batch)
+        ]
+        result["fid_crop"] = calculate_fid(crop_real_features, crop_fake_features)
     if cli.model == "diffusion":
         _, objective, sampler, steps = make_diffusion_process(config, cli, device)
         result.update({"objective": objective, "sampler": sampler, "sample_steps": steps})
