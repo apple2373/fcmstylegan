@@ -141,27 +141,79 @@ def calculate_fid(real_features, fake_features):
     ))
 
 
-def paired_metrics(real_images, fake_images, lpips_model=None, lpips_batch=16):
+def _metric_value(value):
+    value = float(value)
+    return value if np.isfinite(value) else None
+
+
+def paired_metrics(
+    real_images,
+    fake_images,
+    image_ids,
+    masks=None,
+    lpips_model=None,
+    lpips_batch=16,
+):
     real = real_images.cpu().numpy()[:, 0]
     fake = fake_images.cpu().numpy()[:, 0]
+    mask_array = masks.cpu().numpy()[:, 0] if masks is not None else None
+    records = []
     psnr_values, ssim_values = [], []
-    for target, prediction in zip(real, fake):
-        mse = np.mean((target - prediction) ** 2)
-        psnr_values.append(float("inf") if mse == 0 else float(10 * np.log10(1.0 / mse)))
-        ssim_values.append(float(structural_similarity(target, prediction, data_range=1.0)))
+    masked_psnr_values, masked_ssim_values = [], []
+
+    for index, (target, prediction) in enumerate(zip(real, fake)):
+        error = (target - prediction) ** 2
+        mse = np.mean(error)
+        psnr = float("inf") if mse == 0 else float(10 * np.log10(1.0 / mse))
+        ssim, ssim_map = structural_similarity(
+            target, prediction, data_range=1.0, full=True
+        )
+        record = {
+            "image_id": str(image_ids[index]),
+            "psnr": _metric_value(psnr),
+            "ssim": _metric_value(ssim),
+        }
+        psnr_values.append(psnr)
+        ssim_values.append(float(ssim))
+
+        if mask_array is not None:
+            mask = mask_array[index] > 0
+            if not np.any(mask):
+                raise ValueError(f"Mask for image {image_ids[index]!r} is empty")
+            masked_mse = error[mask].mean()
+            masked_psnr = (
+                float("inf")
+                if masked_mse == 0
+                else float(10 * np.log10(1.0 / masked_mse))
+            )
+            masked_ssim = float(ssim_map[mask].mean())
+            record["psnr_masked"] = _metric_value(masked_psnr)
+            record["ssim_masked"] = _metric_value(masked_ssim)
+            masked_psnr_values.append(masked_psnr)
+            masked_ssim_values.append(masked_ssim)
+        records.append(record)
 
     result = {
-        "psnr_mean": float(np.mean(psnr_values)),
+        "psnr_mean": _metric_value(np.mean(psnr_values)),
         "ssim_mean": float(np.mean(ssim_values)),
     }
+    if mask_array is not None:
+        result["psnr_masked_mean"] = _metric_value(np.mean(masked_psnr_values))
+        result["ssim_masked_mean"] = float(np.mean(masked_ssim_values))
+
     if lpips_model is not None:
-        values = []
+        lpips_values = []
         for start in range(0, len(real_images), lpips_batch):
             real_rgb = real_images[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
             fake_rgb = fake_images[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
-            values.append(lpips_model(real_rgb, fake_rgb).detach().flatten().cpu())
-        result["lpips_mean"] = float(torch.cat(values).mean())
-    return result
+            values = lpips_model(real_rgb, fake_rgb).detach().flatten().cpu()
+            lpips_values.append(values)
+        lpips_values = torch.cat(lpips_values).numpy()
+        result["lpips_mean"] = float(lpips_values.mean())
+        for record, value in zip(records, lpips_values):
+            record["lpips"] = float(value)
+
+    return result, records
 
 
 def main():
@@ -173,11 +225,14 @@ def main():
     parser.add_argument("--split", default="test")
     parser.add_argument("--split_column", default=None)
     parser.add_argument("--brightfield_postfix", default=None)
+    parser.add_argument("--mask_postfix", default=None)
+    parser.add_argument("--use_mask", action="store_true", help="load masks and report masked PSNR/SSIM")
     parser.add_argument("--profile_prefix", default=None)
     parser.add_argument("--batch", type=int, default=32)
     parser.add_argument("--num_samples", type=int, default=None)
     parser.add_argument("--seed", type=int, default=123)
-    parser.add_argument("--output", default=None)
+    parser.add_argument("--output", default=None, help="aggregate metrics JSON path")
+    parser.add_argument("--per_image_output", default=None, help="per-image metrics JSONL path")
     parser.add_argument("--device", default=None)
     parser.add_argument("--latent", type=int, default=None)
     parser.add_argument("--n_mlp", type=int, default=None)
@@ -191,7 +246,7 @@ def main():
     parser.add_argument("--sampler", choices=("auto", "ddpm", "ddim", "euler", "heun"), default=None)
     parser.add_argument("--sample_steps", type=int, default=None)
     parser.add_argument("--no_lpips", action="store_true")
-    parser.add_argument("--lpips_batch", type=int, default=16)
+    parser.add_argument("--lpips_batch", type=int, default=128)
     cli = parser.parse_args()
 
     seed_everything(cli.seed)
@@ -202,7 +257,10 @@ def main():
 
     dataset_kwargs = {
         "brightfield_postfix": config_value(config, cli.brightfield_postfix, "brightfield_postfix", "_brightfield_crop_masked_normalized_avebg_pad128.png"),
+        "load_mask": cli.use_mask,
     }
+    if cli.mask_postfix is not None:
+        dataset_kwargs["mask_postfix"] = cli.mask_postfix
     if cli.profile_prefix is not None or "profile_prefix" in config:
         dataset_kwargs["profile_prefix"] = config_value(config, cli.profile_prefix, "profile_prefix", "vertical")
     dataset = SysmexTask1Dataset(cli.datasplit, cli.preprocessed_root, **dataset_kwargs)
@@ -218,6 +276,8 @@ def main():
     inception = load_patched_inception_v3().to(device).eval()
     real_features, fake_features = [], []
     real_images, fake_images = [], []
+    image_ids = [dataset.rows[index].get(dataset.id_column, index) for index in indices]
+    masks = []
     lpips_model = None
     if not cli.no_lpips:
         from lpips import PerceptualLoss
@@ -232,17 +292,24 @@ def main():
         fake_features.append(inception(inception_input(fake01))[0].flatten(1).cpu())
         real_images.append(real01.cpu())
         fake_images.append(fake01.cpu())
+        if cli.use_mask:
+            masks.append(batch["mask"].cpu())
 
     real_images = torch.cat(real_images)
     fake_images = torch.cat(fake_images)
+    masks = torch.cat(masks) if cli.use_mask else None
+    paired_result, per_image = paired_metrics(
+        real_images, fake_images, image_ids, masks, lpips_model, cli.lpips_batch
+    )
     result = {
         "model": cli.model,
         "checkpoint": str(Path(cli.ckpt).resolve()),
         "split": cli.split,
         "num_samples": len(real_images),
         "seed": cli.seed,
+        "mask_metrics": cli.use_mask,
         "fid": calculate_fid(real_features, fake_features),
-        **paired_metrics(real_images, fake_images, lpips_model, cli.lpips_batch),
+        **paired_result,
     }
     if cli.model == "diffusion":
         _, objective, sampler, steps = make_diffusion_process(config, cli, device)
@@ -250,6 +317,17 @@ def main():
     print(json.dumps(result, indent=2))
     if cli.output:
         Path(cli.output).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    per_image_output = cli.per_image_output
+    if per_image_output is None:
+        if cli.output:
+            output_path = Path(cli.output)
+            per_image_output = str(output_path.with_name(output_path.stem + "_per_image.jsonl"))
+        else:
+            per_image_output = "evaluation_per_image.jsonl"
+    with Path(per_image_output).open("w", encoding="utf-8") as file:
+        for record in per_image:
+            file.write(json.dumps(record) + "\n")
+    print(f"per-image metrics: {per_image_output}")
 
 
 if __name__ == "__main__":

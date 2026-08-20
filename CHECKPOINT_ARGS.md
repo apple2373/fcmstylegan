@@ -67,3 +67,20 @@ should normally be supplied as manual evaluation overrides. Architecture
 settings such as `profile_encoder`, `base_channels`, `backbone`, `objective`,
 and `size` should match the training checkpoint unless the model loader can
 infer them independently.
+## Masked metrics and per-image output
+
+Use `--use_mask` to load `SysmexTask1Dataset` masks and add
+`psnr_masked_mean` and `ssim_masked_mean`. These metrics use only foreground
+pixels. Per-image metrics are always saved as JSONL; when `--output eval.json`
+is supplied, the default path is `eval_per_image.jsonl`. It can be overridden
+with `--per_image_output`.
+
+```bash
+python evaluate.py \
+  --model dcgan \
+  --ckpt path/to/checkpoint.pt \
+  --datasplit data/task1_dataset_split.csv \
+  --preprocessed_root data/task1_processed \
+  --use_mask \
+  --output dcgan_eval.json
+```
