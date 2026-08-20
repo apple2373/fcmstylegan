@@ -11,6 +11,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 import torch
+from torch.nn import functional as F
 from skimage.metrics import structural_similarity
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
@@ -214,6 +215,41 @@ def paired_metrics(
         result["lpips_mean"] = float(lpips_values.mean())
         for record, value in zip(records, lpips_values):
             record["lpips"] = float(value)
+
+        if mask_array is not None:
+            # Crop both images using the real-image foreground mask. A fixed
+            # margin preserves local context without allowing the background
+            # to dominate the perceptual comparison.
+            crop_real, crop_fake = [], []
+            for index, mask in enumerate(mask_array):
+                ys, xs = np.where(mask > 0)
+                if len(ys) == 0:
+                    raise ValueError(f"Mask for image {image_ids[index]!r} is empty")
+                margin = 8
+                y0 = max(0, int(ys.min()) - margin)
+                y1 = min(real_images.shape[-2], int(ys.max()) + margin + 1)
+                x0 = max(0, int(xs.min()) - margin)
+                x1 = min(real_images.shape[-1], int(xs.max()) + margin + 1)
+                crop_real.append(real_images[index:index + 1, :, y0:y1, x0:x1])
+                crop_fake.append(fake_images[index:index + 1, :, y0:y1, x0:x1])
+            crop_real = torch.cat([
+                F.interpolate(image, size=real_images.shape[-2:], mode="bilinear", align_corners=False)
+                for image in crop_real
+            ])
+            crop_fake = torch.cat([
+                F.interpolate(image, size=fake_images.shape[-2:], mode="bilinear", align_corners=False)
+                for image in crop_fake
+            ])
+            crop_values = []
+            for start in range(0, len(crop_real), lpips_batch):
+                real_rgb = crop_real[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
+                fake_rgb = crop_fake[start:start + lpips_batch].repeat(1, 3, 1, 1) * 2 - 1
+                values = lpips_model(real_rgb, fake_rgb).detach().flatten().cpu()
+                crop_values.append(values)
+            crop_values = torch.cat(crop_values).numpy()
+            result["lpips_crop_mean"] = float(crop_values.mean())
+            for record, value in zip(records, crop_values):
+                record["lpips_crop"] = float(value)
 
     return result, records
 

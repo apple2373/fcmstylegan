@@ -91,3 +91,10 @@ Generated images can be saved as individual grayscale PNG files with:
 ```
 
 Filenames are derived from the dataset cell IDs.
+When `--use_mask` is enabled, LPIPS reports both:
+
+- `lpips_mean`: full-image LPIPS, including background.
+- `lpips_crop_mean`: LPIPS on both images cropped to the real-image mask
+  bounding box with an 8-pixel context margin, then resized consistently.
+
+The per-image JSONL contains `lpips` and `lpips_crop` for the same two values.
