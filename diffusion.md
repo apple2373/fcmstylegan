@@ -368,3 +368,6 @@ python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --p
 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/      --backbone adm --objective edm --profile_encoder cnn --batch 128 --bf16 --compile default --fid_samples 1000 
 
 
+CUDA_VISIBLE_DEVICES=3 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --profile_encoder mlp --batch 128 --bf16 --compile default --fid_samples 1000   --exp_dir experiments/diffusion/phase1_compact
+
+CUDA_VISIBLE_DEVICES=2 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --sampler ddpm  --profile_encoder mlp --batch 128 --bf16 --compile default --fid_samples 1000   --exp_dir experiments/diffusion/phase1_compact
