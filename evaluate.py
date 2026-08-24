@@ -320,9 +320,9 @@ def main():
     generator = build_generator(cli.model, checkpoint, config, cli, device)
     inception = load_patched_inception_v3().to(device).eval()
     real_features, fake_features = [], []
-    real_images, fake_images = [], []
+    crop_real_features, crop_fake_features = [], []
+    per_image = []
     image_ids = [dataset.rows[index].get(dataset.id_column, index) for index in indices]
-    masks = []
     lpips_model = None
     if not cli.no_lpips:
         from lpips import PerceptualLoss
@@ -347,37 +347,44 @@ def main():
         image_offset += fake01.shape[0]
         real_features.append(inception(inception_input(real01))[0].flatten(1).cpu())
         fake_features.append(inception(inception_input(fake01))[0].flatten(1).cpu())
-        real_images.append(real01.cpu())
-        fake_images.append(fake01.cpu())
-        if cli.use_mask:
-            masks.append(batch["mask"].cpu())
 
-    real_images = torch.cat(real_images)
-    fake_images = torch.cat(fake_images)
-    masks = torch.cat(masks) if cli.use_mask else None
-    paired_result, per_image = paired_metrics(
-        real_images, fake_images, image_ids, masks, lpips_model, cli.lpips_batch
-    )
+        batch_ids = image_ids[image_offset - fake01.shape[0]:image_offset]
+        batch_real = real01.cpu()
+        batch_fake = fake01.cpu()
+        batch_masks = batch["mask"].cpu() if cli.use_mask else None
+        _, batch_records = paired_metrics(
+            batch_real, batch_fake, batch_ids, batch_masks, lpips_model, cli.lpips_batch
+        )
+        per_image.extend(batch_records)
+
+        if cli.use_mask:
+            crop_real, crop_fake = foreground_crops(batch_real, batch_fake, batch_masks)
+            crop_real_features.extend(
+                inception(inception_input(crop_real[start:start + cli.batch]).to(device))[0].flatten(1).cpu()
+                for start in range(0, len(crop_real), cli.batch)
+            )
+            crop_fake_features.extend(
+                inception(inception_input(crop_fake[start:start + cli.batch]).to(device))[0].flatten(1).cpu()
+                for start in range(0, len(crop_fake), cli.batch)
+            )
+
+    paired_result = {}
+    for field in per_image[0]:
+        if field == "image_id":
+            continue
+        values = [record[field] for record in per_image if record.get(field) is not None]
+        paired_result[f"{field}_mean"] = _metric_value(np.mean(values)) if values else None
     result = {
         "model": cli.model,
         "checkpoint": str(Path(cli.ckpt).resolve()),
         "split": cli.split,
-        "num_samples": len(real_images),
+        "num_samples": len(per_image),
         "seed": cli.seed,
         "mask_metrics": cli.use_mask,
         "fid": calculate_fid(real_features, fake_features),
         **paired_result,
     }
     if cli.use_mask:
-        crop_real, crop_fake = foreground_crops(real_images, fake_images, masks)
-        crop_real_features = [
-            inception(inception_input(crop_real[start:start + cli.batch]))[0].flatten(1).cpu()
-            for start in range(0, len(crop_real), cli.batch)
-        ]
-        crop_fake_features = [
-            inception(inception_input(crop_fake[start:start + cli.batch]))[0].flatten(1).cpu()
-            for start in range(0, len(crop_fake), cli.batch)
-        ]
         result["fid_crop"] = calculate_fid(crop_real_features, crop_fake_features)
     if cli.model == "diffusion":
         _, objective, sampler, steps = make_diffusion_process(config, cli, device)
