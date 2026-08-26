@@ -342,7 +342,7 @@ def main():
             for image_id, image in zip(batch_ids, fake01.cpu()):
                 safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(image_id)).strip("._") or "image"
                 Image.fromarray(
-                    (image[0].numpy() * 255).round().astype(np.uint8)
+                    (image[0].numpy() * 65535).round().astype(np.uint16)
                 ).save(Path(cli.save_images_dir) / f"{safe_id}.png")
         image_offset += fake01.shape[0]
         real_features.append(inception(inception_input(real01))[0].flatten(1).cpu())
