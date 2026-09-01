@@ -13,6 +13,8 @@ from PIL import Image
 from skimage.metrics import structural_similarity
 from tqdm import tqdm
 
+from calc_inception import load_patched_inception_v3
+from fid import calc_fid
 from sysmex_task1_dataset import SysmexTask1Dataset
 
 
@@ -82,6 +84,7 @@ def main() -> None:
                         help="per-image metrics JSONL path")
     parser.add_argument("--device", default=None)
     parser.add_argument("--lpips_batch", type=int, default=128)
+    parser.add_argument("--fid_batch", type=int, default=128)
     cli = parser.parse_args()
 
     generated_dir = Path(cli.save_images_dir)
@@ -142,6 +145,22 @@ def main() -> None:
 
     real_tensor = torch.stack(real_batch)
     fake_tensor = torch.stack(fake_batch)
+
+    inception = load_patched_inception_v3().to(device).eval()
+    real_features, fake_features = [], []
+    with torch.inference_mode():
+        for start in range(0, len(records), cli.fid_batch):
+            real_input = real_tensor[start:start + cli.fid_batch].to(device).repeat(1, 3, 1, 1)
+            fake_input = fake_tensor[start:start + cli.fid_batch].to(device).repeat(1, 3, 1, 1)
+            real_features.append(inception(real_input)[0].flatten(1).cpu())
+            fake_features.append(inception(fake_input)[0].flatten(1).cpu())
+    real_features = torch.cat(real_features).numpy()
+    fake_features = torch.cat(fake_features).numpy()
+    fid = float(calc_fid(
+        fake_features.mean(axis=0), np.cov(fake_features, rowvar=False),
+        real_features.mean(axis=0), np.cov(real_features, rowvar=False),
+    ))
+
     lpips_values = []
     with torch.inference_mode():
         for start in range(0, len(records), cli.lpips_batch):
@@ -160,6 +179,7 @@ def main() -> None:
         "psnr_mean": float(np.mean([record["psnr"] for record in records])),
         "ssim_mean": float(np.mean([record["ssim"] for record in records])),
         "lpips_mean": float(lpips_values.mean()),
+        "fid": fid,
     }
     output_path = Path(cli.output or f"center_crop_{cli.crop_size}_metrics.json")
     output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

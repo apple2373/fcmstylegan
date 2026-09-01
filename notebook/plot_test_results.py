@@ -8,8 +8,15 @@ from IPython.display import HTML, display
 import pandas as pd
 from PIL import Image
 
+# %run -i plot_test_results.py #use with -i option
+
 # Edit these settings before running with %run.
-ROOT = Path("~/projects/fcmstylegan/experiments/archive/dcgan_baseline_20260817_231036").expanduser()
+
+# `ROOT` will be provided by notebook side
+# ROOT = Path("~/projects/fcmstylegan/experiments/archive/dcgan_baseline_20260817_231036").expanduser()
+# ROOT = Path("~/projects/fcmstylegan/experiments/archive/stylegan_baseline_20260819_170800").expanduser()
+
+
 PREPROCESSED_ROOT = Path("~/projects/fcmstylegan/data/task1_processed").expanduser()
 TOP_K = 1
 METRICS = ["psnr", "ssim", "psnr_masked", "ssim_masked", "lpips", "lpips_crop"]
