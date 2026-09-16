@@ -1,4 +1,4 @@
-"""DDPM and EDM objectives and samplers."""
+"""DDPM, EDM, and flow-matching objectives and samplers."""
 
 import math
 
@@ -134,4 +134,39 @@ class EDMProcess:
             else:
                 image = image_next
 
+        return image
+
+
+class FlowMatchingProcess:
+    """Conditional linear flow matching from Gaussian noise to data."""
+
+    def __init__(self, noise_scale=1.0):
+        self.noise_scale = noise_scale
+
+    def training_loss(self, model, image, profile):
+        batch = image.shape[0]
+        t = torch.rand(batch, device=image.device)
+        noise = torch.randn_like(image) * self.noise_scale
+        t_view = t[:, None, None, None]
+        noised = t_view * image + (1.0 - t_view) * noise
+        target_velocity = image - noise
+        return F.mse_loss(model(noised, t, profile), target_velocity)
+
+    @torch.no_grad()
+    def sample(self, model, profile, shape, sampler="euler", sampling_steps=50, noise=None):
+        if sampler not in {"euler", "heun"}:
+            raise ValueError("flow_matching supports 'euler' and 'heun' samplers")
+        image = (torch.randn(shape, device=profile.device) * self.noise_scale
+                 if noise is None else noise.clone())
+        dt = 1.0 / sampling_steps
+        for step in range(sampling_steps):
+            t = torch.full((shape[0],), step / sampling_steps, device=image.device)
+            velocity = model(image, t, profile)
+            if sampler == "euler" or step == sampling_steps - 1:
+                image = image + dt * velocity
+                continue
+            next_image = image + dt * velocity
+            next_t = torch.full((shape[0],), (step + 1) / sampling_steps, device=image.device)
+            next_velocity = model(next_image, next_t, profile)
+            image = image + 0.5 * dt * (velocity + next_velocity)
         return image

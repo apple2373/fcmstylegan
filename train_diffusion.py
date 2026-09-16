@@ -6,7 +6,8 @@ import json
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import shutil
-from datetime import datetime
+import time
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import torch
@@ -18,7 +19,7 @@ from tqdm import tqdm
 
 from calc_inception import load_patched_inception_v3
 from diffusion_model import ConditionalUNet
-from diffusion_process import DDPMProcess, EDMProcess
+from diffusion_process import DDPMProcess, EDMProcess, FlowMatchingProcess
 from fid import calc_fid
 from reproducibility import seed_everything, seed_worker
 from run_utils import save_git_metadata
@@ -144,8 +145,8 @@ def main():
         help="denoiser architecture: compact U-Net or ADM-style U-Net",
     )
     parser.add_argument(
-        "--objective", choices=("ddpm", "edm"), default="ddpm",
-        help="training objective: discrete DDPM or continuous EDM",
+        "--objective", choices=("ddpm", "edm", "flow_matching"), default="ddpm",
+        help="training objective: DDPM, EDM, or flow matching",
     )
     parser.add_argument(
         "--sampler",
@@ -153,7 +154,7 @@ def main():
         default="auto",
         help="sampler; auto uses DDIM (50 steps) for DDPM and Heun (40 steps) for EDM",
     )
-    parser.add_argument("--profile_encoder", choices=("cnn", "mlp"), default="cnn")
+    parser.add_argument("--profile_encoder", choices=("cnn", "mlp"), default="mlp")
     parser.add_argument("--base_channels", type=int, default=None)
     parser.add_argument("--dropout", type=float, default=0.0)
     parser.add_argument("--iter", type=int, default=300000)
@@ -194,12 +195,18 @@ def main():
         if sampler not in {"ddpm", "ddim"}:
             raise ValueError("DDPM objective requires --sampler ddpm or ddim")
         sampling_steps = args.sample_steps or (50 if sampler == "ddim" else process.steps)
-    else:
+    elif args.objective == "edm":
         process = EDMProcess()
         sampler = "heun" if args.sampler == "auto" else args.sampler
         if sampler not in {"euler", "heun"}:
             raise ValueError("EDM objective requires --sampler euler or heun")
         sampling_steps = args.sample_steps or 40
+    else:
+        process = FlowMatchingProcess()
+        sampler = "euler" if args.sampler == "auto" else args.sampler
+        if sampler not in {"euler", "heun"}:
+            raise ValueError("flow_matching requires --sampler euler or heun")
+        sampling_steps = args.sample_steps or 50
 
     dataset = SysmexTask1Dataset(
         args.datasplit,
@@ -282,6 +289,12 @@ def main():
     fixed_noise = torch.randn(args.n_sample, 1, 128, 128, device=device)
     inception = None
     use_bf16 = args.bf16 and device.type == "cuda"
+    print(f"Start training for {args.iter} iterations")
+    start_wall_time = datetime.now(timezone.utc)
+    start_perf_time = time.perf_counter()
+    timing_path = os.path.join(run_dir, "timing.txt")
+    with open(timing_path, "w", encoding="utf-8") as timing_file:
+        timing_file.write(f"start_time_utc: {start_wall_time.isoformat(timespec='seconds')}\n")
     progress = tqdm(range(start, args.iter), dynamic_ncols=True)
     batches = iter(loader)
 
@@ -342,7 +355,13 @@ def main():
                 os.path.join(checkpoint_dir, f"{step:06d}.pt"),
             )
 
+    end_wall_time = datetime.now(timezone.utc)
+    elapsed = timedelta(seconds=int(time.perf_counter() - start_perf_time))
+    with open(timing_path, "a", encoding="utf-8") as timing_file:
+        timing_file.write(f"end_time_utc: {end_wall_time.isoformat(timespec='seconds')}\n")
+        timing_file.write(f"elapsed: {elapsed}\n")
     writer.close()
+    print("Training time:", elapsed)
 
 
 if __name__ == "__main__":
