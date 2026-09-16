@@ -371,3 +371,11 @@ python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --p
 CUDA_VISIBLE_DEVICES=3 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --profile_encoder mlp --batch 128 --bf16 --compile default --fid_samples 1000   --exp_dir experiments/diffusion/phase1_compact
 
 CUDA_VISIBLE_DEVICES=2 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone compact --objective ddpm --sampler ddpm  --profile_encoder mlp --batch 128 --bf16 --compile default --fid_samples 1000   --exp_dir experiments/diffusion/phase1_compact
+
+CUDA_VISIBLE_DEVICES=3 python train_diffusion.py     --datasplit ./data/task1_dataset_split.csv     --preprocessed_root ./data/task1_processed/     --backbone adm --objective edm --sampler heun  --profile_encoder mlp --batch 128 --bf16 --compile default --fid_samples 1000   --exp_dir experiments/diffusion/phase2_adm
+
+
+CUDA_VISIBLE_DEVICES=1 python train_jit.py   --datasplit ./data/task1_dataset_split.csv   --preprocessed_root ./data/task1_processed/   --model JiT-B/16   --objective flow_matching   --sampler heun   --batch 128   --bf16   --compile_mode default   --fid_samples 1000   --exp_dir experiments/diffusion/jit
+
+
+CUDA_VISIBLE_DEVICES=2 python train_jit.py   --datasplit ./data/task1_dataset_split.csv   --preprocessed_root ./data/task1_processed/   --model JiT-B/16   --objective flow_matching   --sampler heun   --batch 1024   --bf16   --compile_mode default   --fid_samples 1000   --exp_dir experiments/diffusion/jit
