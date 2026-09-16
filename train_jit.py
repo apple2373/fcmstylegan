@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import utils
 from tqdm import tqdm
 from calc_inception import load_patched_inception_v3
-from diffusion_process import DDPMProcess, FlowMatchingProcess
+from diffusion_process import DDPMProcess, EDMProcess, FlowMatchingProcess
 from reproducibility import seed_everything, seed_worker
 from run_utils import save_git_metadata
 from sysmex_task1_dataset import SysmexTask1Dataset
@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--img_size", type=int, default=128)
     parser.add_argument("--attn_dropout", type=float, default=0.0)
     parser.add_argument("--proj_dropout", type=float, default=0.0)
-    parser.add_argument("--objective", choices=("ddpm", "flow_matching"), default="ddpm")
+    parser.add_argument("--objective", choices=("ddpm", "edm", "flow_matching"), default="ddpm")
     parser.add_argument("--sampler", choices=("auto", "ddpm", "ddim", "euler", "heun"), default="auto")
     parser.add_argument("--sample_steps", type=int, default=None)
     parser.add_argument("--batch", type=int, default=32)
@@ -61,6 +61,11 @@ def main():
         sampler = "ddim" if args.sampler == "auto" else args.sampler
         if sampler not in {"ddpm", "ddim"}: raise ValueError("DDPM requires --sampler ddpm or ddim")
         sampling_steps = args.sample_steps or (50 if sampler == "ddim" else process.steps)
+    elif args.objective == "edm":
+        process = EDMProcess()
+        sampler = "heun" if args.sampler == "auto" else args.sampler
+        if sampler not in {"euler", "heun"}: raise ValueError("EDM requires --sampler euler or heun")
+        sampling_steps = args.sample_steps or 40
     else:
         process = FlowMatchingProcess()
         sampler = "euler" if args.sampler == "auto" else args.sampler

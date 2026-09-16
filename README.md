@@ -44,6 +44,7 @@ uv pip install torch==2.13.0 torchvision==0.28.0 --index-url https://download.py
 uv pip install tqdm pillow lmdb click ninja tensorboard
 # conda install -c nvidia cuda-toolkit -y
 # module load CUDA/13.0.0
+uv pip install einops
 
 ``` 
 
@@ -57,6 +58,9 @@ rm /dev/shm/satoshi.tsutsui/data/task1_processed.zip
 
 conda activate fcmstylegan; cd ~/satoshissd2/fcmstylegan
 CUDA_VISIBLE_DEVICES=0 python run.py --cmd ./exp_dcgan.yaml
+
+
+git submodule update --init --recursive
 ```
 
 ```

@@ -19,8 +19,9 @@ The default `mlp` encoder is `Flatten -> Linear(3 * 128, hidden_dim) -> SiLU`. I
 ## Experiments
 
 1. **JiT + DDPM:** `train_jit.py --objective ddpm`; JiT predicts epsilon and DDPM/DDIM sampling is used.
-2. **U-Net + flow matching:** `train_diffusion.py --objective flow_matching`; the U-Net predicts velocity and Euler/Heun sampling is used.
-3. **JiT + flow matching:** `train_jit.py --objective flow_matching`; JiT predicts velocity and Euler/Heun sampling is used.
+2. **JiT + EDM:** `train_jit.py --objective edm`; JiT is used as the EDM residual network and Euler/Heun sampling is used.
+3. **U-Net + flow matching:** `train_diffusion.py --objective flow_matching`; the U-Net predicts velocity and Euler/Heun sampling is used.
+4. **JiT + flow matching:** `train_jit.py --objective flow_matching`; JiT predicts velocity and Euler/Heun sampling is used.
 
 For fair comparisons, keep the dataset split, profile encoder, image size, seed, batch size, EMA, fixed profiles, fixed noise, and evaluation procedure constant.
 
@@ -67,7 +68,25 @@ CUDA_VISIBLE_DEVICES=3 python train_diffusion.py \
 
 Use `--sampler euler` for the cheaper first-order flow-matching sampler.
 
-### 3. JiT + flow matching
+### 3. JiT + EDM
+
+```bash
+CUDA_VISIBLE_DEVICES=3 python train_jit.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/task1_processed/ \
+  --model JiT-B/16 \
+  --objective edm \
+  --sampler heun \
+  --batch 32 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_edm
+```
+
+JiT is used as the EDM residual model here.
+
+### 4. JiT + flow matching
 
 ```bash
 CUDA_VISIBLE_DEVICES=3 python train_jit.py \
