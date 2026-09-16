@@ -7,6 +7,7 @@ import shutil
 import time
 from datetime import datetime, timezone, timedelta
 import torch
+torch.set_float32_matmul_precision("high")
 from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import utils

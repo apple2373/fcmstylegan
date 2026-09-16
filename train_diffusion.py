@@ -8,9 +8,9 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 import shutil
 import time
 from datetime import datetime, timedelta, timezone
-
 import numpy as np
 import torch
+torch.set_float32_matmul_precision("high")
 from torch.nn import functional as F
 from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
