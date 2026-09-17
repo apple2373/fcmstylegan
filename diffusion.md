@@ -379,3 +379,16 @@ CUDA_VISIBLE_DEVICES=1 python train_jit.py   --datasplit ./data/task1_dataset_sp
 
 
 CUDA_VISIBLE_DEVICES=2 python train_jit.py   --datasplit ./data/task1_dataset_split.csv   --preprocessed_root ./data/task1_processed/   --model JiT-B/16   --objective flow_matching   --sampler heun   --batch 1024   --bf16   --compile_mode default   --fid_samples 1000   --exp_dir experiments/diffusion/jit
+
+CUDA_VISIBLE_DEVICES=1 python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/task1_processed/ \
+  --model JiT-B/16 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --batch 128 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_original \
+  --seed 0

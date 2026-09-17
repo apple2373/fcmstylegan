@@ -105,3 +105,29 @@ CUDA_VISIBLE_DEVICES=3 python train_jit.py \
 For an initial smoke test, add `--iter 100 --sample_every 50 --fid_every 0` to
 any command. JiT generally needs a smaller batch than the compact U-Net because
 of its transformer memory usage.
+## Original JiT-style training
+
+For the paper-style JiT procedure, use `train_jit_original.py`. It is separate
+from `train_jit.py` so the controlled objective comparisons remain unambiguous.
+It uses JiT's logit-normal timestep sampling, clean-image prediction followed
+by velocity conversion, profile dropout with a learned null embedding, and the
+JiT-style ODE sampler. It writes the same `args.json`, TensorBoard scalars,
+`validation_fid.jsonl`, checkpoints, samples, and `timing.txt` as the other
+trainers.
+
+```bash
+CUDA_VISIBLE_DEVICES=3 python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root /dev/shm/satoshi.tsutsui/data/task1_processed/ \
+  --model JiT-B/16 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --cfg 1.0 \
+  --batch 32 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion_sweep/jit_original_seed0 \
+  --seed 0
+```
+
