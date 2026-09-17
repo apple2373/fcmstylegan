@@ -47,6 +47,11 @@ def main():
     parser.add_argument("--proj_dropout", type=float, default=0.0)
     parser.add_argument("--P_mean", type=float, default=-0.8)
     parser.add_argument("--P_std", type=float, default=0.8)
+    parser.add_argument(
+        "--t_distribution", choices=("logit_normal", "uniform"),
+        default="logit_normal",
+        help="training-time t distribution (default: logit_normal)",
+    )
     parser.add_argument("--noise_scale", type=float, default=1.0)
     parser.add_argument("--t_eps", type=float, default=5e-2)
     parser.add_argument("--profile_drop_prob", type=float, default=0.1)
@@ -82,8 +87,10 @@ def main():
     from jit_model import ConditionalJiTOriginal
     seed_everything(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    process = JiTOriginalProcess(args.P_mean, args.P_std, args.noise_scale, args.t_eps,
-                                 args.cfg, args.interval_min, args.interval_max)
+    process = JiTOriginalProcess(
+        args.P_mean, args.P_std, args.noise_scale, args.t_eps,
+        args.cfg, args.interval_min, args.interval_max, args.t_distribution,
+    )
     dataset = SysmexTask1Dataset(args.datasplit, args.preprocessed_root,
                                  brightfield_postfix=args.brightfield_postfix)
     subsets = split_dataset(dataset, args.split_column)

@@ -22,15 +22,23 @@ import torch.nn.functional as F
 
 class JiTOriginalProcess:
     def __init__(self, P_mean=-0.8, P_std=0.8, noise_scale=1.0, t_eps=5e-2,
-                 cfg=1.0, interval_min=0.0, interval_max=1.0):
+                 cfg=1.0, interval_min=0.0, interval_max=1.0,
+                 t_distribution="logit_normal"):
+        if t_distribution not in {"logit_normal", "uniform"}:
+            raise ValueError(
+                "t_distribution must be 'logit_normal' or 'uniform'"
+            )
         self.P_mean = P_mean
         self.P_std = P_std
         self.noise_scale = noise_scale
         self.t_eps = t_eps
         self.cfg = cfg
         self.cfg_interval = (interval_min, interval_max)
+        self.t_distribution = t_distribution
 
     def sample_t(self, batch, device):
+        if self.t_distribution == "uniform":
+            return torch.rand(batch, device=device)
         logits = torch.randn(batch, device=device) * self.P_std + self.P_mean
         return torch.sigmoid(logits)
 
