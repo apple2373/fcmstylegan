@@ -387,8 +387,10 @@ CUDA_VISIBLE_DEVICES=1 python train_jit_original.py \
   --sampler heun \
   --num_sampling_steps 50 \
   --batch 128 \
+  --lr 2.5e-5 \
+  --warmup_iters 2000 \
   --bf16 \
   --compile_mode default \
   --fid_samples 1000 \
-  --exp_dir experiments/diffusion/jit_original \
+  --exp_dir experiments/diffusion/jit_original_lrfix \
   --seed 0
