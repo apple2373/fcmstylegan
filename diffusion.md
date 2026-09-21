@@ -470,3 +470,38 @@ python train_jit_original.py \
   --exp_dir experiments/diffusion/jit_original_uniform_t_no_cfg \
   --seed 0
   ```
+
+
+  ```bash
+  # JiT-B/8
+ python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/task1_processed/ \
+  --model JiT-B/8 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --batch 128 \
+  --lr 2.5e-5 \
+  --warmup_iters 2000 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_original_b8 \
+  --seed 0
+
+  # JiT-B/4
+CUDA_VISIBLE_DEVICES=2 /home/satoshi/miniconda3/envs/fcmstylegan/bin/python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root ./data/task1_processed/ \
+  --model JiT-B/4 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --batch 128 \
+  --lr 2.5e-5 \
+  --warmup_iters 2000 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_original_b4 \
+  --seed 0
+    ```
