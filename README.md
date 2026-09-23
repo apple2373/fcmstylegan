@@ -45,7 +45,8 @@ uv pip install tqdm pillow lmdb click ninja tensorboard
 # conda install -c nvidia cuda-toolkit -y
 # module load CUDA/13.0.0
 uv pip install einops
-
+uv pip install scikit-image
+uv pip install ipython
 ``` 
 
 ```
