@@ -52,6 +52,7 @@ uv pip install ipython
 ```
  rsync -aAX --info=progress2 --no-i-r  --max-size=10M  eeeg:/home/satoshi.tsutsui/satoshihdd/experiments/fcmstylegan/ /home/satoshi/projects/fcmstylegan/experiments/eeeg/
 
+cd ~/fcmstylegan/
 mkdir -p /dev/shm/satoshi.tsutsui/data
 cp data/task1_processed.zip /dev/shm/satoshi.tsutsui/data/ 
 unzip -q /dev/shm/satoshi.tsutsui/data/task1_processed.zip -d /dev/shm/satoshi.tsutsui/data/
