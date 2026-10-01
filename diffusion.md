@@ -510,7 +510,7 @@ CUDA_VISIBLE_DEVICES=2 /home/satoshi/miniconda3/envs/fcmstylegan/bin/python trai
   ```
   CUDA_VISIBLE_DEVICES=0 python train_jit_original.py \
   --datasplit ./data/task1_dataset_split.csv \
-  --preprocessed_root ./data/task1_processed/ \
+  --preprocessed_root /dev/shm/satoshi.tsutsui/data/task1_processed \
   --model JiT-B/16 \
   --sampler heun \
   --num_sampling_steps 50 \
@@ -527,7 +527,7 @@ CUDA_VISIBLE_DEVICES=2 /home/satoshi/miniconda3/envs/fcmstylegan/bin/python trai
 
   CUDA_VISIBLE_DEVICES=0 python train_jit_original.py \
   --datasplit ./data/task1_dataset_split.csv \
-  --preprocessed_root ./data/task1_processed/ \
+  --preprocessed_root /dev/shm/satoshi.tsutsui/data/task1_processed \
   --model JiT-B/16 \
   --sampler heun \
   --num_sampling_steps 50 \
@@ -540,4 +540,37 @@ CUDA_VISIBLE_DEVICES=2 /home/satoshi/miniconda3/envs/fcmstylegan/bin/python trai
   --exp_dir experiments/diffusion/jit_original_noisescale \
   --seed 0 \
   --noise_scale 0.125
+
+
+CUDA_VISIBLE_DEVICES=0 python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root /dev/shm/satoshi.tsutsui/data/task1_processed \
+  --model JiT-B/16 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --batch 128 \
+  --lr 2.5e-5 \
+  --warmup_iters 2000 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_original_noisescale \
+  --seed 0 \
+  --noise_scale 0.1
+
+CUDA_VISIBLE_DEVICES=0 python train_jit_original.py \
+  --datasplit ./data/task1_dataset_split.csv \
+  --preprocessed_root /dev/shm/satoshi.tsutsui/data/task1_processed \
+  --model JiT-B/16 \
+  --sampler heun \
+  --num_sampling_steps 50 \
+  --batch 128 \
+  --lr 2.5e-5 \
+  --warmup_iters 2000 \
+  --bf16 \
+  --compile_mode default \
+  --fid_samples 1000 \
+  --exp_dir experiments/diffusion/jit_original_noisescale \
+  --seed 0 \
+  --noise_scale 0.05
   ```
